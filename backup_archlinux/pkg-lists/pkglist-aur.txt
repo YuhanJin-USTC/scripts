@@ -1,3 +1,4 @@
 alist-bin
 topiary-bin
-yay
+yay-bin
+yay-bin-debug

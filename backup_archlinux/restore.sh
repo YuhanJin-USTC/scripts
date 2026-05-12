@@ -4,10 +4,10 @@
 set -e
 
 # Core configurations
-TARGET_USER="xuanwu"
+TARGET_USER="yuhanjin"
 TARGET_HOME="/home/$TARGET_USER"
-DOTFILES_REPO="https://github.com/MaxwellWx/dot_files.git"
-SCRIPTS_REPO="https://github.com/MaxwellWx/scripts.git"
+DOTFILES_REPO="https://github.com/YuhanJin-USTC/dot_files.git"
+SCRIPTS_REPO="https://github.com/YuhanJin-USTC/scripts.git"
 
 # Proxy configurations (Centralized)
 PROXY_URL="http://127.0.0.1:7890"

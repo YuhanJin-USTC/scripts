@@ -1,7 +1,5 @@
 apptainer
 aria2
-autoconf
-automake
 base
 base-devel
 clang
@@ -11,12 +9,10 @@ fd
 ffmpeg
 fuse2
 fuse2fs
-gcc
 git
 lazygit
 less
 luarocks
-make
 markdownlint-cli
 neovim
 noto-fonts-cjk
@@ -31,6 +27,7 @@ rclone
 reflector
 ripgrep
 rsync
+screenfetch
 shfmt
 stow
 sudo

@@ -2,8 +2,8 @@
 
 def main [] {
   # path
-  let src_dir = ("~/win_downloads" | path expand)
-  let win_ssh_dest = "/mnt/c/Users/15371/.ssh"
+  let src_dir = ("/mnt/d/Download/Edge" | path expand)
+  let win_ssh_dest = "/mnt/c/Users/17865/.ssh"
   let wsl_ssh_dest = ("~/.ssh" | path expand)
 
   # check dir
@@ -12,9 +12,9 @@ def main [] {
 
   # map prefix to file name
   let key_map = {
-    "xuanwu_tycs": "id_ty"
-    "xuanwu_wuzh": "id_wz"
-    "xuanwu_hf": "id_hf"
+    "yuhanjin_tycs": "id_ty"
+    "yuhanjin_wuzh": "id_wz"
+    "yuhanjin_hf": "id_hf"
   }
 
   print "sync ssh file"

@@ -2,11 +2,11 @@
 
 # src & dest path config
 let terminal_path_win = "/mnt/d"
-let terminal_path_linux = "/home/xuanwu"
+let terminal_path_linux = "/home/yuhanjin"
 let NAS_home_path = "/mnt/y"
-let NAS_group_path = "/mnt/z/吴玄"
+let NAS_group_path = "/mnt/z/金虞焓"
 let webdav_remote = "ustcpan"
-let config_base = "/home/xuanwu/scripts/sync_file/"
+let config_base = "/home/yuhanjin/scripts/sync_file/"
 
 # rule file
 let rule_win2nas = "exclude_rules_windows_nas_home"
