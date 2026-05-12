@@ -158,10 +158,17 @@ else
 fi
 
 echo "  -> Executing stow configuration..."
+
+# Check and resolve physical config conflict before stowing
+if [ -f "$TARGET_HOME/.ssh/config" ] && [ ! -L "$TARGET_HOME/.ssh/config" ]; then
+  echo "  -> Notice: Found physical config file in ~/.ssh, removing to allow stowing..."
+  rm -f "$TARGET_HOME/.ssh/config"
+fi
+
 cd "$TARGET_HOME/dot_files" || exit
 for target_dir in */; do
   dir_name="\${target_dir%/}"
-  if [[ "$dir_name" =~ ^(\.git|windows_configs)$ ]]; then
+  if [[ "\$dir_name" =~ ^(\.git|windows_configs)$ ]]; then
     continue
   fi
   stow --restow -t "$TARGET_HOME" "\$dir_name"
