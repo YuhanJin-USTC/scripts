@@ -32,7 +32,8 @@ SENSITIVE_DIRS=()
 [ -d "$HOME/.gnupg" ] && SENSITIVE_DIRS+=(".gnupg")
 
 if [ ${#SENSITIVE_DIRS[@]} -gt 0 ]; then
-  tar -czf "$DATA_DIR/secure_data.tar.gz" -C "$HOME" "${SENSITIVE_DIRS[@]}"
+  # Added -h flag to follow symlinks and archive actual file content
+  tar -czhf "$DATA_DIR/secure_data.tar.gz" -C "$HOME" "${SENSITIVE_DIRS[@]}"
 
   gpg --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 --output "$DATA_DIR/secure_data.tar.gz.gpg" "$DATA_DIR/secure_data.tar.gz"
   rm -f "$DATA_DIR/secure_data.tar.gz"
