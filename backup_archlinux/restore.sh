@@ -84,15 +84,23 @@ fi
 
 echo "[5/10] Restore sensitive credentials (SSH & GPG)..."
 if [ -f "$BACKUP_ROOT/data/secure_data.tar.gz.gpg" ]; then
-  gpg --yes --pinentry-mode loopback --decrypt --output "$BACKUP_ROOT/data/secure_data.tar.gz" "$BACKUP_ROOT/data/secure_data.tar.gz.gpg"
-  tar -xzf "$BACKUP_ROOT/data/secure_data.tar.gz" -C "$TARGET_HOME/"
-  rm -f "$BACKUP_ROOT/data/secure_data.tar.gz"
-
-  chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.ssh" "$TARGET_HOME/.gnupg" 2>/dev/null || true
-  chmod 700 "$TARGET_HOME/.ssh" "$TARGET_HOME/.gnupg" 2>/dev/null || true
-  find "$TARGET_HOME/.ssh" -type f -exec chmod 600 {} \; 2>/dev/null || true
-  find "$TARGET_HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} \; 2>/dev/null || true
-  echo "  -> Credentials restored and secured."
+  # Use safer interactive read to avoid sudo/TTY issues
+  echo -n "  -> Enter GPG passphrase for credential decryption: "
+  read -s GPG_PASS
+  echo ""
+  
+  if echo "$GPG_PASS" | gpg --yes --batch --pinentry-mode loopback --passphrase-fd 0 --decrypt --output "$BACKUP_ROOT/data/secure_data.tar.gz" "$BACKUP_ROOT/data/secure_data.tar.gz.gpg"; then
+    tar -xzf "$BACKUP_ROOT/data/secure_data.tar.gz" -C "$TARGET_HOME/"
+    rm -f "$BACKUP_ROOT/data/secure_data.tar.gz"
+    
+    chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.ssh" "$TARGET_HOME/.gnupg" 2>/dev/null || true
+    chmod 700 "$TARGET_HOME/.ssh" "$TARGET_HOME/.gnupg" 2>/dev/null || true
+    find "$TARGET_HOME/.ssh" -type f -exec chmod 600 {} \; 2>/dev/null || true
+    find "$TARGET_HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} \; 2>/dev/null || true
+    echo "  -> Credentials restored and secured."
+  else
+    echo "  -> Error: Decryption failed. Skipping Step [5/10]."
+  fi
 else
   echo "  -> No secure data archive found. Skipping."
 fi
@@ -149,19 +157,28 @@ export http_proxy="$PROXY_URL"
 export https_proxy="$PROXY_URL"
 export all_proxy="$SOCKS_URL"
 
-if [ ! -d "$TARGET_HOME/dot_files" ]; then
-  echo "  -> Cloning dot_files repository..."
-  git clone "$DOTFILES_REPO" "$TARGET_HOME/dot_files"
-else
-  echo "  -> dot_files exists. Pulling latest changes..."
-  cd "$TARGET_HOME/dot_files" && git pull origin main || true
-fi
+# Improved Force Sync Function to kill nested dirs and conflicts
+force_sync_repo() {
+  local url=\$1
+  local path=\$2
+  if [ ! -d "\$path" ]; then
+    echo "  -> Initializing \$(basename "\$path")..."
+    git clone "\$url" "\$path"
+  else
+    echo "  -> Syncing \$(basename "\$path") (Force Reset to Remote)..."
+    cd "\$path"
+    git fetch origin main
+    git reset --hard origin/main
+    git clean -fd
+  fi
+}
+
+force_sync_repo "$DOTFILES_REPO" "$TARGET_HOME/dot_files"
 
 echo "  -> Executing stow configuration..."
-
 # Check and resolve physical config conflict before stowing
 if [ -f "$TARGET_HOME/.ssh/config" ] && [ ! -L "$TARGET_HOME/.ssh/config" ]; then
-  echo "  -> Notice: Found physical config file in ~/.ssh, removing to allow stowing..."
+  echo "  -> Removing physical config file to allow stowing..."
   rm -f "$TARGET_HOME/.ssh/config"
 fi
 
@@ -174,13 +191,7 @@ for target_dir in */; do
   stow --restow -t "$TARGET_HOME" "\$dir_name"
 done
 
-if [ ! -d "$TARGET_HOME/scripts" ]; then
-  echo "  -> Cloning scripts repository..."
-  git clone "$SCRIPTS_REPO" "$TARGET_HOME/scripts"
-else
-  echo "  -> scripts exists. Pulling latest changes..."
-  cd "$TARGET_HOME/scripts" && git pull origin main || true
-fi
+force_sync_repo "$SCRIPTS_REPO" "$TARGET_HOME/scripts"
 EOF
 
 echo "[-] Restore Windows WezTerm configuration..."
