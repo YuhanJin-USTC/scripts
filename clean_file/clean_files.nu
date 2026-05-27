@@ -1,73 +1,212 @@
 #!/usr/bin/env nu
 
-def main [] {
-  let current_script = $env.CURRENT_FILE | default "clean.nu"
+def path-has-protected-part [path: string] {
+  let parts = ($path | path split)
 
-  print "Scanning directory for files to delete..."
+  if ($parts | any {|part| $part in [".git" ".ssh" ".gnupg"] }) {
+    return true
+  }
 
-  # 1. Identify files to delete
-  # ---------------------------------------------------------
-  let files_to_delete = (
-    ls -a **/*
-    | where type == file
-    # Fixed: Use closure {|x| ...} to correctly evaluate the logic
-    | where {|row| ".git" not-in ($row.name | path split) }
-    # Protect .py files
-    | where {|row| not ($row.name | str ends-with ".py") }
-    # Protect .sh files
-    | where {|row| not ($row.name | str ends-with ".sh") }
-    # Protect this script itself
-    | where {|row| ($row.name | path basename) != ($current_script | path basename) }
+  ($path | str contains "/backup_archlinux/data/") or ($path | str ends-with "/backup_archlinux/data")
+}
+
+def protected-extension? [path: string] {
+  let ext = ($path | path parse | get extension | str downcase)
+
+  $ext in [
+    py sh nu c h cpp cxx cc hpp f f90 cu jl m
+    deck tmpl namelist inp in i mac cfg conf toml yaml yml json
+    md tex bib sty cls org ipynb
+    h5 hdf5 sdf bp bp4 bp5 vtk vti vtu csv tsv dat txt npy npz mat nc root
+    gpg asc pem key pub tar gz tgz zip 7z xz bz2
+  ]
+}
+
+def protected-file? [path: string] {
+  let base = ($path | path basename)
+  let ext = ($path | path parse | get extension)
+
+  if ($base in [AGENTS.md Makefile makefile Dockerfile Containerfile]) {
+    return true
+  }
+
+  if $ext == "" {
+    return true
+  }
+
+  protected-extension? $path
+}
+
+def junk-file? [path: string] {
+  let base = ($path | path basename)
+  let ext = ($path | path parse | get extension | str downcase)
+
+  if ($base in [".DS_Store" "Thumbs.db"]) {
+    return true
+  }
+
+  if ($base | str ends-with "~") {
+    return true
+  }
+
+  if (protected-file? $path) {
+    return false
+  }
+
+  $ext in [pyc pyo tmp temp bak swp swo]
+}
+
+def junk-dir? [path: string] {
+  let base = ($path | path basename)
+  $base in [__pycache__ .pytest_cache .mypy_cache .ruff_cache .ipynb_checkpoints]
+}
+
+def assert-safe-target [target: string] {
+  let home = ($env.HOME | path expand)
+  let repo = ("/home/yuhanjin/scripts" | path expand)
+
+  if not ($target | path exists) {
+    error make {msg: $"Target does not exist: ($target)"}
+  }
+
+  if (($target | path type) != "dir") {
+    error make {msg: $"Target is not a directory: ($target)"}
+  }
+
+  if $target in ["/" $home $repo] {
+    error make {msg: $"Refusing to clean protected target: ($target)"}
+  }
+}
+
+def list-candidates [target: string] {
+  let pattern = ($target | path join "**/*")
+  let paths = (
+    glob $pattern --no-symlink
+    | where {|path| $path != $target }
+    | where {|path| not (path-has-protected-part $path) }
   )
 
-  if ($files_to_delete | is-empty) {
-    print "No files found to delete."
-    return
-  }
+  let files = (
+    $paths
+    | where {|path| ($path | path type) == "file" }
+    | where {|path| junk-file? $path }
+    | sort
+  )
 
-  # 2. User Confirmation
-  # ---------------------------------------------------------
-  print $"Found ($files_to_delete | length) files to delete:"
-  print ($files_to_delete | get name)
-  print ""
+  let junk_dirs = (
+    $paths
+    | where {|path| ($path | path type) == "dir" }
+    | where {|path| junk-dir? $path }
+    | sort-by {|path| $path | str length } --reverse
+  )
 
-  let answer = (input "Delete these files and remove empty directories? [y/N] ")
+  {files: $files, junk_dirs: $junk_dirs}
+}
 
-  if ($answer | str downcase) != "y" {
-    print "Operation cancelled by user."
-    return
-  }
+def list-empty-dirs-after [
+  target: string
+  files: list<string>
+  junk_dirs: list<string>
+] {
+  let pattern = ($target | path join "**/*")
+  let dirs = (
+    glob $pattern --no-file --no-symlink
+    | where {|path| $path != $target }
+    | where {|path| not (path-has-protected-part $path) }
+    | where {|path| ($path | path type) == "dir" }
+    | where {|path| not (junk-dir? $path) }
+    | sort-by {|path| $path | str length } --reverse
+  )
 
-  # 3. Delete Files
-  # ---------------------------------------------------------
-  print "Deleting files..."
-  for file in $files_to_delete {
-    try {
-      rm $file.name
-    } catch {
-      print $"Failed to delete: ($file.name)"
+  mut empty_dirs = []
+
+  for dir in $dirs {
+    let entries = (try { ls -a $dir | get name } catch { [] })
+    let removable = ($files | append $junk_dirs | append $empty_dirs)
+
+    if ($entries | all {|entry| $entry in $removable }) {
+      $empty_dirs = ($empty_dirs | append $dir)
     }
   }
 
-  # 4. Remove Empty Directories (Recursive)
-  # ---------------------------------------------------------
-  let dirs = (
-    ls -a **/*
-    | where type == dir
-    # Fixed: Use closure here too
-    | where {|row| ".git" not-in ($row.name | path split) }
-    | sort-by -r {|row| $row.name | str length }
-  )
+  $empty_dirs | sort-by {|path| $path | str length } --reverse
+}
 
-  print "Cleaning empty directories..."
-  for dir in $dirs {
-    let is_empty = (ls -a $dir.name | is-empty)
-    if $is_empty {
-      print $"Removing empty directory: ($dir.name)"
+def print-list [title: string, items: list<string>] {
+  print $"($title): ($items | length)"
+
+  if not ($items | is-empty) {
+    print $items
+  }
+}
+
+def main [
+  target_dir: path
+  --run
+] {
+  let target = ($target_dir | path expand)
+
+  assert-safe-target $target
+
+  let candidates = (list-candidates $target)
+  let files = $candidates.files
+  let junk_dirs = $candidates.junk_dirs
+  let empty_dirs = (list-empty-dirs-after $target $files $junk_dirs)
+  let total = (($files | length) + ($junk_dirs | length) + ($empty_dirs | length))
+
+  print $"Target: ($target)"
+  print "Mode: explicit junk only"
+  print "File rules: *.pyc *.pyo *.tmp *.temp *.bak *.swp *.swo *~ .DS_Store Thumbs.db"
+  print "Dir rules: __pycache__ .pytest_cache .mypy_cache .ruff_cache .ipynb_checkpoints"
+  print "Protected: source, scripts, PIC inputs, templates, papers, configs, data, backups, keys"
+  print ""
+
+  print-list "Junk files" $files
+  print-list "Junk directories" $junk_dirs
+  print-list "Empty directories" $empty_dirs
+  print ""
+
+  if $total == 0 {
+    print "Nothing to clean."
+    return
+  }
+
+  if not $run {
+    print "Dry run only. Add --run to delete these paths."
+    return
+  }
+
+  let answer = (input "Type DELETE to permanently remove these paths: ")
+
+  if $answer != "DELETE" {
+    print "Operation cancelled."
+    return
+  }
+
+  for file in $files {
+    try {
+      rm $file
+    } catch {
+      print $"Failed to delete file: ($file)"
+    }
+  }
+
+  for dir in $junk_dirs {
+    if ($dir | path exists) {
       try {
-        rm $dir.name
+        rm -r $dir
       } catch {
-        print $"Failed to remove directory: ($dir.name)"
+        print $"Failed to remove directory: ($dir)"
+      }
+    }
+  }
+
+  for dir in $empty_dirs {
+    if ($dir | path exists) {
+      try {
+        rm $dir
+      } catch {
+        print $"Failed to remove empty directory: ($dir)"
       }
     }
   }

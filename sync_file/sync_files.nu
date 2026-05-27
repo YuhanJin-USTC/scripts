@@ -1,97 +1,203 @@
 #!/usr/bin/env nu
 
 # src & dest path config
-let terminal_path_win = "/mnt/d"
-let terminal_path_linux = "/home/yuhanjin"
-let NAS_home_path = "/mnt/y"
-let NAS_group_path = "/mnt/z/金虞焓"
-let webdav_remote = "ustcpan"
-let config_base = "/home/yuhanjin/scripts/sync_file/"
+let nas_home_path = "/mnt/y"
+let nas_group_path = "/mnt/z/金虞焓"
+let matlab_postprocess_path = "/mnt/d/Document/Matlab"
+let nas_matlab_postprocess_path = "/mnt/z/金虞焓/Post_Process"
+let under_graduate_path = "/mnt/c/Users/17865/Desktop/Under Graduate"
+let config_base = "/home/yuhanjin/scripts/sync_file"
 
 # rule file
-let rule_win2nas = "exclude_rules_windows_nas_home"
-let rule_wsl2nas = "exclude_rules_linux_nas_home"
-let rule_nas_home2nas_group = "exclude_rules_nas_home_nas_group"
+let rule_nas_only = "exclude_rules_nas_only"
 
 # log file
 let log_file = ($env.HOME | path join ".cache/sync_files.log")
 
+# sync list
+let sync_items = [
+  {
+    src: "/home/yuhanjin/dot_files"
+    dest_root: $nas_home_path
+    dest_name: "dot_files"
+    description: "dot_files to NAS Home"
+  }
+  {
+    src: "/home/yuhanjin/scripts"
+    dest_root: $nas_home_path
+    dest_name: "scripts"
+    description: "scripts to NAS Home"
+  }
+  {
+    src: "/home/yuhanjin/Code_Program"
+    dest_root: $nas_group_path
+    dest_name: "Code_Program"
+    description: "Code_Program to NAS Group"
+  }
+  {
+    src: "/home/yuhanjin/Simulation"
+    dest_root: $nas_group_path
+    dest_name: "Simulation"
+    description: "Simulation to NAS Group"
+  }
+  {
+    src: "/home/yuhanjin/Source_Code"
+    dest_root: $nas_group_path
+    dest_name: "Source_Code"
+    description: "Source_Code to NAS Group"
+  }
+  {
+    src: $under_graduate_path
+    dest_root: $nas_home_path
+    dest_name: "Under_Graduate"
+    description: "Under Graduate to NAS Home"
+  }
+  {
+    src: $matlab_postprocess_path
+    dest_root: $nas_matlab_postprocess_path
+    dest_name: "Matlab"
+    description: "Matlab postprocess data to NAS Group"
+  }
+]
+
 # log function
-def log [message: string] {
+def write-log [message: string] {
   let timestamp = (date now | format date '%Y-%m-%d %H:%M:%S')
   let log_entry = $"($timestamp): ($message)"
-  print $log_entry
-  $log_entry | save --append $log_file
+  $"($log_entry)\n" | save --append $log_file
+}
+
+def info [message: string] {
+  print $message
+  write-log $message
+}
+
+def status-label [status: string] {
+  match $status {
+    "OK" => $"(ansi green)OK(ansi reset)"
+    "SKIP" => $"(ansi yellow)SKIP(ansi reset)"
+    "ERROR" => $"(ansi red)ERROR(ansi reset)"
+    "DRY-RUN" => $"(ansi cyan)DRY-RUN(ansi reset)"
+    _ => $status
+  }
+}
+
+def status [label: string message: string] {
+  print $"[(status-label $label)] ($message)"
+  write-log $"[($label)] ($message)"
 }
 
 # check whether path exists
 def check-path [path: string name: string] {
   if not ($path | path exists) {
-    log $"ERROR: Path for ($name) not found: ($path). Aborting."
+    status "ERROR" $"Path for ($name) not found: ($path). Aborting."
     exit 1
   }
 }
 
+def target-path [src: string dest_root: string dest_name: string] {
+  let name = if $dest_name == "" { $src | path basename } else { $dest_name }
+  $dest_root | path join $name
+}
+
+def print-header [dry_run: bool rule_file: string] {
+  print ""
+  print $"(ansi cyan)NAS sync(ansi reset)"
+  print $"Rule: ($rule_file)"
+  if $dry_run {
+    status "DRY-RUN" "No files will be changed."
+  }
+  print ""
+}
+
+def print-plan [items: list rule_file: string] {
+  info "Sync plan:"
+  for row in ($items | enumerate) {
+    let item = $row.item
+    let src = ($item.src | str trim)
+    let index = ($row.index + 1)
+    let dest = if $src == "" {
+      "(skip: empty source)"
+    } else {
+      target-path $src $item.dest_root $item.dest_name
+    }
+    info $"  [($index)/($items | length)] ($item.description)"
+    info $"      SRC: (if $src == '' { '(empty)' } else { $src })"
+    info $"      DST: ($dest)"
+  }
+  info $"Exclude: ($rule_file)"
+  print ""
+}
+
 # sync function
 def run-rsync [
-  src: string
-  dest: string
+  item: record
+  index: int
+  total: int
   rule_file: string
-  description: string
-  --delete # whether use delete arg
+  dry_run: bool
 ] {
-  log $"Starting sync: ($description)..."
+  let src = ($item.src | str trim)
 
-  # rsync args
-  mut args = [-arv]
-  if $delete { $args = ($args | append "--delete") }
+  if $src == "" {
+    status "SKIP" $"[($index)/($total)] ($item.description): source path is empty."
+    return
+  }
+
+  if not ($src | path exists) {
+    status "ERROR" $"[($index)/($total)] ($item.description): source path not found: ($src). Aborting."
+    exit 1
+  }
+
+  let dest = (target-path $src $item.dest_root $item.dest_name)
+  print $"(ansi blue)----------------------------------------(ansi reset)"
+  info $"[($index)/($total)] ($item.description)"
+  info $"SRC: ($src)"
+  info $"DST: ($dest)"
+
+  mut args = ["-a" "--update" "--no-links" "--human-readable"]
+  if $dry_run {
+    $args = ($args | append "--dry-run")
+    $args = ($args | append "--info=stats2")
+  } else {
+    $args = ($args | append "--info=progress2,stats2")
+  }
   $args = ($args | append $"--exclude-from=($rule_file)")
-  $args = ($args | append "--no-links")
   $args = ($args | append $"($src)/")
   $args = ($args | append $"($dest)/")
 
-  # run
   let final_args = $args
   do { ^rsync ...$final_args }
 
   let exit_code = $env.LAST_EXIT_CODE
   if $exit_code == 0 {
-    log $"SUCCESS: ($description)"
+    status "OK" $"[($index)/($total)] ($item.description)"
   } else {
-    log $"ERROR: ($description) failed with code ($exit_code)"
+    status "ERROR" $"[($index)/($total)] ($item.description) failed with code ($exit_code)"
+    exit $exit_code
   }
 }
 
-# main function
-log "=== Starting file synchronization process ==="
+def main [
+  --dry-run # show rsync actions without changing NAS
+] {
+  check-path $nas_home_path "NAS Home Mount"
+  check-path $nas_group_path "NAS Group Mount"
 
-# 1. check whether path exists 
-check-path $NAS_home_path "NAS Home Mount"
-check-path $NAS_group_path "NAS Group Mount"
-check-path $terminal_path_win "Windows Mount"
+  let rule_file = ($config_base | path join $rule_nas_only)
+  check-path $rule_file "NAS-only rule file"
 
-check-path ($config_base | path join $rule_win2nas) "rule file for Windows to NAS"
-check-path ($config_base | path join $rule_wsl2nas) "rule file for WSL to NAS"
-check-path ($config_base | path join $rule_nas_home2nas_group) "rule file for NAS home to NAS group"
+  print-header $dry_run $rule_file
+  write-log "=== Starting NAS synchronization process ==="
+  if $dry_run { write-log "DRY RUN: no files will be changed." }
+  print-plan $sync_items $rule_file
 
-# 2. Windows -> NAS Home
-run-rsync $terminal_path_win $NAS_home_path ($config_base | path join $rule_win2nas) "Windows to NAS Home"
+  let total = ($sync_items | length)
+  for row in ($sync_items | enumerate) {
+    run-rsync $row.item ($row.index + 1) $total $rule_file $dry_run
+  }
 
-# 3. Linux -> NAS Home
-run-rsync $terminal_path_linux $NAS_home_path ($config_base | path join $rule_wsl2nas) "Linux to NAS Home"
-
-# 4. NAS Home -> NAS Group
-run-rsync $NAS_home_path $NAS_group_path ($config_base | path join $rule_nas_home2nas_group) "NAS Home to NAS Group" --delete
-
-# 5. NAS Home -> WebDAV
-log $"Starting sync from ($NAS_home_path) to ustcpan"
-
-do { ^rclone copy -v --progress --transfers 4 --retries 3 --size-only --exclude="#recycle/**" $"($NAS_home_path)/" $"($webdav_remote):NAS_HOME" }
-
-if $env.LAST_EXIT_CODE == 0 {
-  log "SUCCESS: sync from nas home to webdav"
-} else {
-  log $"ERROR: sync from nas home to webdav failed with code ($env.LAST_EXIT_CODE)"
+  print $"(ansi blue)----------------------------------------(ansi reset)"
+  status "OK" "NAS synchronization completed."
+  write-log "=== NAS synchronization completed ==="
 }
-
-log "=== All sync operations completed successfully ==="
