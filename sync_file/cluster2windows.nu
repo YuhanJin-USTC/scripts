@@ -35,7 +35,13 @@ def main [
   }
 
   # Base flags: archive, compress, skip owner/group (for WSL/NTFS)
-  mut args = ["-amz" "-v" "--no-o" "--no-g"]
+  mut args = [
+    "-amz", "-v", 
+    "--no-o", "--no-g", "--no-perms", "--no-times", "--size-only",
+    "--partial",
+    "--timeout=600",
+    "-e", "ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=10" 
+  ]
 
   if $dry_run {
     $args = ($args | append ["--dry-run"])
