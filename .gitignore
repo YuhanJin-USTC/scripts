@@ -14,6 +14,13 @@ __pycache__/
 *.tar
 *.tar.gz
 *.tgz
+!backup_archlinux/data/home_config.tar.gz
+!backup_archlinux/data/sys_config.tar.gz
+!backup_archlinux/data/secure_data.tar.gz.gpg
+backup_archlinux/data/secure_data.tar.gz
+backup_archlinux/data/.ssh
+backup_archlinux/data/.ssh/
+backup_archlinux/data/.gnupg/
 
 *.log
 *.out

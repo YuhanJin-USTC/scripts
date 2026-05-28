@@ -1,19 +1,67 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status
 set -e
+set -o pipefail
 
-# Core configurations
 TARGET_USER="yuhanjin"
 TARGET_HOME="/home/$TARGET_USER"
 DOTFILES_REPO="https://github.com/YuhanJin-USTC/dot_files.git"
 SCRIPTS_REPO="https://github.com/YuhanJin-USTC/scripts.git"
 
-# Proxy configurations (Centralized)
 PROXY_URL="http://127.0.0.1:7890"
 SOCKS_URL="socks5://127.0.0.1:7890"
+RESTORE_STAMP=$(date +%Y%m%d_%H%M%S)
+RESTORE_BACKUP_DIR="/root/arch_restore_backup_$RESTORE_STAMP"
 
-# Intercept check: Must be executed as root
+backup_existing_path() {
+  local target=$1
+  local rel
+  local backup_target
+
+  if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+    return
+  fi
+
+  rel=${target#/}
+  backup_target="$RESTORE_BACKUP_DIR/$rel"
+  mkdir -p "$(dirname "$backup_target")"
+  mv "$target" "$backup_target"
+  echo "  -> Existing $target moved to $backup_target"
+}
+
+backup_existing_from_tar() {
+  local archive=$1
+  local base=$2
+  local entry
+  local clean_entry
+
+  while IFS= read -r entry; do
+    clean_entry=${entry#./}
+    clean_entry=${clean_entry%/}
+    [ -z "$clean_entry" ] && continue
+    [ "$clean_entry" = ".ssh/config" ] && continue
+    backup_existing_path "$base/$clean_entry"
+  done < <(tar -tzf "$archive")
+}
+
+restore_sensitive_file() {
+  local archive=$1
+  local rel_path=$2
+  local mode=$3
+  local target="$TARGET_HOME/$rel_path"
+
+  if ! tar -tzf "$archive" "$rel_path" >/dev/null 2>&1; then
+    return
+  fi
+
+  backup_existing_path "$target"
+  mkdir -p "$(dirname "$target")"
+  tar -xOzf "$archive" "$rel_path" >"$target"
+  chown "$TARGET_USER:$TARGET_USER" "$target"
+  chmod "$mode" "$target"
+  echo "  -> Restored $target"
+}
+
 if [ "$EUID" -ne 0 ]; then
   echo "Error: This restore pipeline MUST be executed as root."
   exit 1
@@ -34,8 +82,9 @@ echo "  -> Resolved BACKUP_ROOT: $BACKUP_ROOT"
 
 echo "[0/10] Restore system configurations..."
 if [ -f "$BACKUP_ROOT/data/sys_config.tar.gz" ]; then
+  backup_existing_from_tar "$BACKUP_ROOT/data/sys_config.tar.gz" /
   tar -xzf "$BACKUP_ROOT/data/sys_config.tar.gz" -C /
-  echo "  -> System configs (pacman.conf, mirrorlist) restored."
+  echo "  -> System configs restored."
 else
   echo "  -> Warning: sys_config.tar.gz not found. Skipping."
 fi
@@ -68,10 +117,18 @@ if ! id "$TARGET_USER" &>/dev/null; then
   echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" >/etc/sudoers.d/wheel_nopasswd
 fi
 
-cat <<EOF >/etc/wsl.conf
+if [ ! -f /etc/wsl.conf ]; then
+  cat <<EOF >/etc/wsl.conf
 [user]
 default=$TARGET_USER
 EOF
+elif ! grep -q "^\[user\]" /etc/wsl.conf; then
+  cat <<EOF >>/etc/wsl.conf
+
+[user]
+default=$TARGET_USER
+EOF
+fi
 
 echo "[4/10] Migrate restore scripts and data..."
 if [[ "$BACKUP_ROOT" != "$TARGET_HOME"* ]]; then
@@ -82,22 +139,52 @@ if [[ "$BACKUP_ROOT" != "$TARGET_HOME"* ]]; then
   BACKUP_ROOT="$TARGET_BACKUP_ROOT"
 fi
 
+echo "[-] Restore home shell configurations..."
+if [ -f "$BACKUP_ROOT/data/home_config.tar.gz" ]; then
+  backup_existing_from_tar "$BACKUP_ROOT/data/home_config.tar.gz" "$TARGET_HOME"
+  tar -xzf "$BACKUP_ROOT/data/home_config.tar.gz" -C "$TARGET_HOME"
+  chown "$TARGET_USER:$TARGET_USER" "$TARGET_HOME"/.bash* 2>/dev/null || true
+  echo "  -> Home shell configs restored."
+else
+  echo "  -> Notice: home_config.tar.gz not found. Skipping."
+fi
+
 echo "[5/10] Restore sensitive credentials (SSH & GPG)..."
 if [ -f "$BACKUP_ROOT/data/secure_data.tar.gz.gpg" ]; then
-  # Use safer interactive read to avoid sudo/TTY issues
   echo -n "  -> Enter GPG passphrase for credential decryption: "
   read -s GPG_PASS
   echo ""
-  
-  if echo "$GPG_PASS" | gpg --yes --batch --pinentry-mode loopback --passphrase-fd 0 --decrypt --output "$BACKUP_ROOT/data/secure_data.tar.gz" "$BACKUP_ROOT/data/secure_data.tar.gz.gpg"; then
-    tar -xzf "$BACKUP_ROOT/data/secure_data.tar.gz" -C "$TARGET_HOME/"
-    rm -f "$BACKUP_ROOT/data/secure_data.tar.gz"
-    
+
+  SECURE_TMP_DIR=$(mktemp -d)
+  SECURE_TAR_TMP="$SECURE_TMP_DIR/secure_data.tar.gz"
+  cleanup_secure_tmp() {
+    rm -f "$SECURE_TAR_TMP"
+    rmdir "$SECURE_TMP_DIR" 2>/dev/null || true
+  }
+  trap cleanup_secure_tmp EXIT
+
+  if echo "$GPG_PASS" | gpg --yes --batch --pinentry-mode loopback --passphrase-fd 0 --decrypt --output "$SECURE_TAR_TMP" "$BACKUP_ROOT/data/secure_data.tar.gz.gpg"; then
+    while IFS= read -r entry; do
+      clean_entry=${entry#./}
+      clean_entry=${clean_entry%/}
+      [ -z "$clean_entry" ] && continue
+      [ "$clean_entry" = ".ssh/config" ] && continue
+      [ "$clean_entry" = ".config/rclone/rclone.conf" ] && continue
+      [ "$clean_entry" = ".codex/.env" ] && continue
+      backup_existing_path "$TARGET_HOME/$clean_entry"
+    done < <(tar -tzf "$SECURE_TAR_TMP")
+
+    tar \
+      --exclude=".ssh/config" \
+      --exclude=".config/rclone/rclone.conf" \
+      --exclude=".codex/.env" \
+      -xzf "$SECURE_TAR_TMP" -C "$TARGET_HOME/"
+
     chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.ssh" "$TARGET_HOME/.gnupg" 2>/dev/null || true
     chmod 700 "$TARGET_HOME/.ssh" "$TARGET_HOME/.gnupg" 2>/dev/null || true
     find "$TARGET_HOME/.ssh" -type f -exec chmod 600 {} \; 2>/dev/null || true
     find "$TARGET_HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} \; 2>/dev/null || true
-    echo "  -> Credentials restored and secured."
+    echo "  -> SSH/GPG restored; SSH config left for dot_files/stow."
   else
     echo "  -> Error: Decryption failed. Skipping Step [5/10]."
   fi
@@ -176,10 +263,14 @@ force_sync_repo() {
 force_sync_repo "$DOTFILES_REPO" "$TARGET_HOME/dot_files"
 
 echo "  -> Executing stow configuration..."
-# Check and resolve physical config conflict before stowing
-if [ -f "$TARGET_HOME/.ssh/config" ] && [ ! -L "$TARGET_HOME/.ssh/config" ]; then
-  echo "  -> Removing physical config file to allow stowing..."
-  rm -f "$TARGET_HOME/.ssh/config"
+# Keep SSH config owned by dot_files/stow.
+SSH_CONFIG_PATH="$TARGET_HOME/.ssh/config"
+USER_BACKUP_DIR="$TARGET_HOME/restore_backup_$RESTORE_STAMP"
+if [ -e "\$SSH_CONFIG_PATH" ] || [ -L "\$SSH_CONFIG_PATH" ]; then
+  backup_target="\$USER_BACKUP_DIR/.ssh/config"
+  mkdir -p "\$(dirname "\$backup_target")"
+  mv "\$SSH_CONFIG_PATH" "\$backup_target"
+  echo "  -> Existing SSH config moved to \$backup_target"
 fi
 
 cd "$TARGET_HOME/dot_files" || exit
@@ -193,6 +284,14 @@ done
 
 force_sync_repo "$SCRIPTS_REPO" "$TARGET_HOME/scripts"
 EOF
+
+echo "[-] Restore sensitive app configs..."
+if [ -n "${SECURE_TAR_TMP:-}" ] && [ -f "$SECURE_TAR_TMP" ]; then
+  restore_sensitive_file "$SECURE_TAR_TMP" ".config/rclone/rclone.conf" 600
+  restore_sensitive_file "$SECURE_TAR_TMP" ".codex/.env" 600
+else
+  echo "  -> No decrypted sensitive archive available. Skipping."
+fi
 
 echo "[-] Restore Windows WezTerm configuration..."
 WIN_PROFILE_CMD=$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r')
