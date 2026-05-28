@@ -80,7 +80,7 @@ else
 fi
 echo "  -> Resolved BACKUP_ROOT: $BACKUP_ROOT"
 
-echo "[0/10] Restore system configurations..."
+echo "[0/9] Restore system configurations..."
 if [ -f "$BACKUP_ROOT/data/sys_config.tar.gz" ]; then
   backup_existing_from_tar "$BACKUP_ROOT/data/sys_config.tar.gz" /
   tar -xzf "$BACKUP_ROOT/data/sys_config.tar.gz" -C /
@@ -89,7 +89,7 @@ else
   echo "  -> Warning: sys_config.tar.gz not found. Skipping."
 fi
 
-echo "[1/10] Configure System Locale (UTF-8)..."
+echo "[1/9] Configure System Locale (UTF-8)..."
 if grep -q "^#en_US.UTF-8 UTF-8" /etc/locale.gen; then
   sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
   locale-gen
@@ -99,7 +99,7 @@ else
   echo "  -> Locale already configured."
 fi
 
-echo "[2/10] Initialize keyring and basic pkgs..."
+echo "[2/9] Initialize keyring and basic pkgs..."
 if [ ! -d "/etc/pacman.d/gnupg" ]; then
   pacman-key --init
   pacman-key --populate archlinux
@@ -111,7 +111,7 @@ pacman -Sy --noconfirm archlinux-keyring
 pacman -Su --noconfirm
 pacman -S --needed --noconfirm base-devel git stow sudo wget tar openssh gnupg
 
-echo "[3/10] Setup target user ($TARGET_USER) and privileges..."
+echo "[3/9] Setup target user ($TARGET_USER) and privileges..."
 if ! id "$TARGET_USER" &>/dev/null; then
   useradd -m -G wheel -s /bin/bash "$TARGET_USER"
   echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" >/etc/sudoers.d/wheel_nopasswd
@@ -130,7 +130,7 @@ default=$TARGET_USER
 EOF
 fi
 
-echo "[4/10] Migrate restore scripts and data..."
+echo "[4/9] Migrate restore scripts and data..."
 if [[ "$BACKUP_ROOT" != "$TARGET_HOME"* ]]; then
   echo "  -> Migrating repository to $TARGET_HOME..."
   TARGET_BACKUP_ROOT="$TARGET_HOME/backup_archlinux"
@@ -149,7 +149,7 @@ else
   echo "  -> Notice: home_config.tar.gz not found. Skipping."
 fi
 
-echo "[5/10] Restore sensitive credentials (SSH & GPG)..."
+echo "[5/9] Restore sensitive credentials (SSH & GPG)..."
 if [ -f "$BACKUP_ROOT/data/secure_data.tar.gz.gpg" ]; then
   echo -n "  -> Enter GPG passphrase for credential decryption: "
   read -s GPG_PASS
@@ -186,13 +186,13 @@ if [ -f "$BACKUP_ROOT/data/secure_data.tar.gz.gpg" ]; then
     find "$TARGET_HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} \; 2>/dev/null || true
     echo "  -> SSH/GPG restored; SSH config left for dot_files/stow."
   else
-    echo "  -> Error: Decryption failed. Skipping Step [5/10]."
+    echo "  -> Error: Decryption failed. Skipping Step [5/9]."
   fi
 else
   echo "  -> No secure data archive found. Skipping."
 fi
 
-echo "[6/10] Install pkgs from pacman..."
+echo "[6/9] Install pkgs from pacman..."
 PKG_LIST_DIR="$BACKUP_ROOT/pkg-lists"
 if [ -f "$PKG_LIST_DIR/pkglist-pacman.txt" ]; then
   pacman -S --needed --noconfirm - <"$PKG_LIST_DIR/pkglist-pacman.txt"
@@ -200,7 +200,7 @@ else
   echo "  -> Error: pkglist-pacman.txt not found."
 fi
 
-echo "[7/10] Deploy AUR helper (yay)..."
+echo "[7/9] Deploy AUR helper (yay)..."
 su -s /bin/bash "$TARGET_USER" <<EOF
 set -e
 export http_proxy="$PROXY_URL"
@@ -219,7 +219,7 @@ else
 fi
 EOF
 
-echo "[8/10] Install pkgs from AUR..."
+echo "[8/9] Install pkgs from AUR..."
 if [ -f "$PKG_LIST_DIR/pkglist-aur.txt" ]; then
   AUR_PKGS=$(grep -v '^#' "$PKG_LIST_DIR/pkglist-aur.txt" | grep -vwE 'yay|yay-bin' | tr '\n' ' ' | xargs)
 
@@ -237,7 +237,7 @@ else
   echo "  -> Error: pkglist-aur.txt not found."
 fi
 
-echo "[9/10] Clone and stow dotfiles..."
+echo "[9/9] Clone and stow dotfiles..."
 su -s /bin/bash "$TARGET_USER" <<EOF
 set -e
 export http_proxy="$PROXY_URL"
@@ -276,7 +276,7 @@ fi
 cd "$TARGET_HOME/dot_files" || exit
 for target_dir in */; do
   dir_name="\${target_dir%/}"
-  if [[ "\$dir_name" =~ ^(\.git|windows_configs)$ ]]; then
+  if [[ "\$dir_name" == ".git" ]]; then
     continue
   fi
   stow --restow -t "$TARGET_HOME" "\$dir_name"
@@ -293,30 +293,7 @@ else
   echo "  -> No decrypted sensitive archive available. Skipping."
 fi
 
-echo "[-] Restore Windows WezTerm configuration..."
-WIN_PROFILE_CMD=$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r')
-
-if [ -n "$WIN_PROFILE_CMD" ]; then
-  WIN_HOME=$(wslpath "$WIN_PROFILE_CMD")
-  WEZTERM_DOTFILES_DIR="$TARGET_HOME/dot_files/windows_configs/wezterm"
-  WIN_CONFIG_PARENT="$WIN_HOME/.config"
-  WEZTERM_WIN_DIR="$WIN_CONFIG_PARENT/wezterm"
-
-  if [ -d "$WEZTERM_DOTFILES_DIR" ]; then
-    sudo -u "$TARGET_USER" bash -c "
-      mkdir -p '$WIN_CONFIG_PARENT'
-      rm -rf '$WEZTERM_WIN_DIR' 2>/dev/null || true
-      cp -r '$WEZTERM_DOTFILES_DIR' '$WEZTERM_WIN_DIR'
-    "
-    echo "  -> Restored WezTerm config to Windows at $WEZTERM_WIN_DIR as $TARGET_USER."
-  else
-    echo "  -> Notice: No WezTerm config found in dot_files. Skipping."
-  fi
-else
-  echo "  -> Warning: Failed to resolve Windows User Profile path."
-fi
-
-echo "[10/10] Restore default shell configuration..."
+echo "[9/9] Restore default shell configuration..."
 SHELL_FILE="$BACKUP_ROOT/data/default_shell.txt"
 
 if [ -f "$SHELL_FILE" ]; then

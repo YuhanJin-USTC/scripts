@@ -71,8 +71,8 @@ Only explicit legacy names such as `xuanwu`, `xuan_wu`, `xuan-wu`, or `xuan wu` 
 
 Use this map to understand the workflow before editing. Keep this section compact; it is an agent guide, not a full README.
 
-- `backup_archlinux/backup.sh`: backs up Arch WSL package lists, a credential archive, system config, default shell, Windows WezTerm config, and checks key Git repos. It is a step-by-step Bash pipeline with `set -e`, explicit paths, `pacman`, `tar`, `gpg`, copy operations, and Git status checks.
-- `backup_archlinux/restore.sh`: restores a fresh Arch WSL setup. It is a root Bash pipeline that restores configs, installs packages, creates the user, decrypts credentials, installs AUR packages, force-syncs dotfiles/scripts, stows configs, restores WezTerm, and restores the default shell.
+- `backup_archlinux/backup.sh`: backs up Arch WSL package lists, a credential archive, system config, default shell, and checks key Git repos. It is a step-by-step Bash pipeline with `set -e`, explicit paths, `pacman`, `tar`, `gpg`, and Git status checks.
+- `backup_archlinux/restore.sh`: restores a fresh Arch WSL setup. It is a root Bash pipeline that restores configs, installs packages, creates the user, decrypts credentials, installs AUR packages, force-syncs dotfiles/scripts, stows configs, and restores the default shell.
 - `update_archlinux/update.sh`: dry-run-first Arch/AUR update helper. It uses Bash option parsing, `checkupdates`/`pacman -Qu`, `yay -Qua`, and real update mode behind `--run`.
 - `sync_file/sync_files.nu`: syncs WSL research and work directories to NAS. It uses Nushell config records, `rsync` argument construction, logging, path checks, exclude rules, and `--dry-run`.
 - `sync_file/cluster2windows.nu`: downloads selected cluster files into a flat local destination. It wraps `rsync` with optional prefix/suffix include filters and SSH keepalive options.

@@ -13,10 +13,10 @@ mkdir -p "$PKG_LIST_DIR" "$DATA_DIR"
 
 echo "=== Arch Linux WSL Backup Pipeline ==="
 
-echo "[1/8] Backup pkgs from pacman..."
+echo "[1/7] Backup pkgs from pacman..."
 pacman -Qqen >"$PKG_LIST_DIR/pkglist-pacman.txt" || true
 
-echo "[2/8] Backup pkgs from AUR..."
+echo "[2/7] Backup pkgs from AUR..."
 pacman -Qqem >"$PKG_LIST_DIR/pkglist-aur.txt" || true
 
 if grep -q "^topiary$" "$PKG_LIST_DIR/pkglist-aur.txt"; then
@@ -24,7 +24,7 @@ if grep -q "^topiary$" "$PKG_LIST_DIR/pkglist-aur.txt"; then
   echo "  -> Replaced 'topiary' with 'topiary-bin' to avoid slow compilation."
 fi
 
-echo "[3/8] Archive sensitive credentials..."
+echo "[3/7] Archive sensitive credentials..."
 SENSITIVE_PATHS=()
 [ -d "$HOME/.ssh" ] && SENSITIVE_PATHS+=(".ssh")
 [ -d "$HOME/.gnupg" ] && SENSITIVE_PATHS+=(".gnupg")
@@ -40,7 +40,7 @@ else
   echo "  -> No credentials found to archive."
 fi
 
-echo "[4/8] Archive home shell configuration files..."
+echo "[4/7] Archive home shell configuration files..."
 HOME_CONFIGS=()
 for path in .bashrc .bash_profile .bash_logout; do
   [ -e "$HOME/$path" ] && HOME_CONFIGS+=("$path")
@@ -53,7 +53,7 @@ else
   echo "  -> No home shell configs found to archive."
 fi
 
-echo "[5/8] Archive system configuration files..."
+echo "[5/7] Archive system configuration files..."
 SYS_CONFIGS=()
 for path in \
   etc/pacman.conf \
@@ -72,31 +72,11 @@ else
   echo "  -> No system configs found to archive."
 fi
 
-echo "[6/8] Archive default shell configuration..."
+echo "[6/7] Archive default shell configuration..."
 getent passwd "$USER" | cut -d: -f7 >"$DATA_DIR/default_shell.txt"
 echo "  -> Default shell ($(cat "$DATA_DIR/default_shell.txt")) recorded."
 
-echo "[7/8] Backup Windows WezTerm configuration..."
-WIN_PROFILE_CMD=$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r')
-
-if [ -n "$WIN_PROFILE_CMD" ]; then
-  WIN_HOME=$(wslpath "$WIN_PROFILE_CMD")
-  WEZTERM_WIN_DIR="$WIN_HOME/.config/wezterm"
-  WEZTERM_DOTFILES_DIR="$DOTFILES_DIR/windows_configs/wezterm"
-
-  if [ -d "$WEZTERM_WIN_DIR" ]; then
-    mkdir -p "$DOTFILES_DIR/windows_configs"
-    rm -rf "$WEZTERM_DOTFILES_DIR"
-    cp -r "$WEZTERM_WIN_DIR" "$WEZTERM_DOTFILES_DIR"
-    echo "  -> Copied WezTerm config directory from Windows to $WEZTERM_DOTFILES_DIR"
-  else
-    echo "  -> Notice: WezTerm config directory not found at $WEZTERM_WIN_DIR. Skipping."
-  fi
-else
-  echo "  -> Warning: Failed to resolve Windows User Profile path via WSL Interop."
-fi
-
-echo "[8/8] Check git status of core directories..."
+echo "[7/7] Check git status of core directories..."
 CHECK_DIRS=(
   "$DOTFILES_DIR"
   "$SCRIPTS_DIR"
@@ -110,6 +90,20 @@ for dir in "${CHECK_DIRS[@]}"; do
       echo "  [Warning] Uncommitted changes detected in $dir."
       echo "  >>> PLEASE COMMIT AND PUSH THESE CHANGES TO PREVENT DATA LOSS <<<"
       git status -s | sed 's/^/    /'
+    fi
+
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+    if [ -n "$upstream" ]; then
+      read -r behind ahead < <(git rev-list --left-right --count "$upstream"...HEAD)
+      if [ "$ahead" -gt 0 ]; then
+        echo "  [Warning] $dir has $ahead local commit(s) not pushed to $upstream."
+        echo "  >>> PUSH THESE COMMITS BEFORE RESTORING ON A NEW MACHINE <<<"
+      fi
+      if [ "$behind" -gt 0 ]; then
+        echo "  [Notice] $dir is $behind commit(s) behind $upstream."
+      fi
+    else
+      echo "  [Notice] $dir has no upstream branch configured."
     fi
   elif [ -d "$dir" ]; then
     echo "  [Notice] $dir is not a git repository. It will not be synced."
