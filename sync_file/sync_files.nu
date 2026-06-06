@@ -100,10 +100,12 @@ def target-path [src: string dest_root: string dest_name: string] {
   $dest_root | path join $name
 }
 
-def print-header [dry_run: bool rule_file: string] {
+def print-header [target: string dry_run: bool rule_file: string] {
   print ""
   print $"(ansi cyan)NAS sync(ansi reset)"
-  print $"Rule: ($rule_file)"
+  info $"Target: ($target)"
+  info $"Mode: (if $dry_run { 'dry-run' } else { 'run' })"
+  info $"Rule: ($rule_file)"
   if $dry_run {
     status "DRY-RUN" "No files will be changed."
   }
@@ -111,7 +113,7 @@ def print-header [dry_run: bool rule_file: string] {
 }
 
 def print-plan [items: list rule_file: string] {
-  info "Sync plan:"
+  info $"Sync items: ($items | length)"
   for row in ($items | enumerate) {
     let item = $row.item
     let src = ($item.src | str trim)
@@ -122,11 +124,48 @@ def print-plan [items: list rule_file: string] {
       target-path $src $item.dest_root $item.dest_name
     }
     info $"  [($index)/($items | length)] ($item.description)"
-    info $"      SRC: (if $src == '' { '(empty)' } else { $src })"
-    info $"      DST: ($dest)"
+    info $"      Source: (if $src == '' { '(empty)' } else { $src })"
+    info $"      Destination: ($dest)"
   }
   info $"Exclude: ($rule_file)"
   print ""
+}
+
+def sync-key [name: string] {
+  $name | str downcase | str replace --all " " "_"
+}
+
+def item-names [item: record] {
+  [
+    $item.dest_name
+    ($item.src | path basename)
+  ] | each { |name| sync-key $name } | uniq
+}
+
+def select-items [items: list target: string] {
+  let key = (sync-key $target)
+  if $key == "all" {
+    return $items
+  }
+
+  let selected = ($items | where { |item| $key in (item-names $item) })
+  if ($selected | length) == 0 {
+    status "ERROR" $"Unknown sync target: ($target)"
+    info "Available targets:"
+    for item in $items {
+      info $"  ($item.dest_name)"
+    }
+    info "  all"
+    exit 1
+  }
+
+  $selected
+}
+
+def check-dest-roots [items: list] {
+  for root in ($items | get dest_root | uniq) {
+    check-path $root $"Destination root ($root)"
+  }
 }
 
 # sync function
@@ -179,25 +218,33 @@ def run-rsync [
 }
 
 def main [
-  --dry-run # show rsync actions without changing NAS
+  target: string = "all" # sync target folder, or all
+  --run # sync for real
 ] {
-  check-path $nas_home_path "NAS Home Mount"
-  check-path $nas_group_path "NAS Group Mount"
+  let do_dry_run = not $run
 
   let rule_file = ($config_base | path join $rule_nas_only)
   check-path $rule_file "NAS-only rule file"
 
-  print-header $dry_run $rule_file
-  write-log "=== Starting NAS synchronization process ==="
-  if $dry_run { write-log "DRY RUN: no files will be changed." }
-  print-plan $sync_items $rule_file
+  let selected_items = (select-items $sync_items $target)
+  check-dest-roots $selected_items
 
-  let total = ($sync_items | length)
-  for row in ($sync_items | enumerate) {
-    run-rsync $row.item ($row.index + 1) $total $rule_file $dry_run
+  print-header $target $do_dry_run $rule_file
+  write-log "=== Starting NAS synchronization process ==="
+  if $do_dry_run { write-log "DRY RUN: no files will be changed." }
+  write-log $"Target: ($target)"
+  print-plan $selected_items $rule_file
+
+  let total = ($selected_items | length)
+  for row in ($selected_items | enumerate) {
+    run-rsync $row.item ($row.index + 1) $total $rule_file $do_dry_run
   }
 
   print $"(ansi blue)----------------------------------------(ansi reset)"
-  status "OK" "NAS synchronization completed."
+  if $do_dry_run {
+    status "OK" "Dry run completed. Add --run to sync these paths."
+  } else {
+    status "OK" "NAS synchronization completed."
+  }
   write-log "=== NAS synchronization completed ==="
 }

@@ -140,11 +140,38 @@ def print-list [title: string, items: list<string>] {
   }
 }
 
+def status-label [status: string] {
+  match $status {
+    "OK" => $"(ansi green)OK(ansi reset)"
+    "SKIP" => $"(ansi yellow)SKIP(ansi reset)"
+    "ERROR" => $"(ansi red)ERROR(ansi reset)"
+    "DRY-RUN" => $"(ansi cyan)DRY-RUN(ansi reset)"
+    _ => $status
+  }
+}
+
+def status [label: string message: string] {
+  print $"[(status-label $label)] ($message)"
+}
+
+def print-header [target: string dry_run: bool] {
+  print ""
+  print $"(ansi cyan)File clean(ansi reset)"
+  print $"Target: ($target)"
+  print $"Mode: (if $dry_run { 'dry-run' } else { 'run' })"
+  print "Rule: explicit junk only"
+  if $dry_run {
+    status "DRY-RUN" "No files will be deleted."
+  }
+  print ""
+}
+
 def main [
   target_dir: path
   --run
 ] {
   let target = ($target_dir | path expand)
+  let do_dry_run = not $run
 
   assert-safe-target $target
 
@@ -154,8 +181,7 @@ def main [
   let empty_dirs = (list-empty-dirs-after $target $files $junk_dirs)
   let total = (($files | length) + ($junk_dirs | length) + ($empty_dirs | length))
 
-  print $"Target: ($target)"
-  print "Mode: explicit junk only"
+  print-header $target $do_dry_run
   print "File rules: *.pyc *.pyo *.tmp *.temp *.bak *.swp *.swo *~ .DS_Store Thumbs.db"
   print "Dir rules: __pycache__ .pytest_cache .mypy_cache .ruff_cache .ipynb_checkpoints"
   print "Protected: source, scripts, PIC inputs, templates, papers, configs, data, backups, keys"
@@ -167,19 +193,19 @@ def main [
   print ""
 
   if $total == 0 {
-    print "Nothing to clean."
+    status "OK" "Nothing to clean."
     return
   }
 
-  if not $run {
-    print "Dry run only. Add --run to delete these paths."
+  if $do_dry_run {
+    status "OK" "Dry run completed. Add --run to delete these paths."
     return
   }
 
   let answer = (input "Type DELETE to permanently remove these paths: ")
 
   if $answer != "DELETE" {
-    print "Operation cancelled."
+    status "SKIP" "Operation cancelled."
     return
   }
 
@@ -211,5 +237,5 @@ def main [
     }
   }
 
-  print "Cleanup complete."
+  status "OK" "Cleanup complete."
 }

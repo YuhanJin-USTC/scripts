@@ -4,6 +4,47 @@ set -e
 
 MODE="dry-run"
 
+color() {
+  printf '\033[%sm%s\033[0m' "$1" "$2"
+}
+
+status_label() {
+  case "$1" in
+    OK)
+      color 32 OK
+      ;;
+    SKIP)
+      color 33 SKIP
+      ;;
+    ERROR)
+      color 31 ERROR
+      ;;
+    DRY-RUN)
+      color 36 DRY-RUN
+      ;;
+    *)
+      printf '%s' "$1"
+      ;;
+  esac
+}
+
+status() {
+  printf '[%s] %s\n' "$(status_label "$1")" "$2"
+}
+
+print_header() {
+  echo ""
+  color 36 "Arch update"
+  echo ""
+  echo "Target: Arch Linux WSL"
+  echo "Mode: $MODE"
+  echo "Rule: official repo + AUR"
+  if [ "$MODE" = "dry-run" ]; then
+    status DRY-RUN "No packages will be changed."
+  fi
+  echo ""
+}
+
 usage() {
   printf '%s\n' \
     "Usage: $0 [--dry-run|--run]" \
@@ -29,7 +70,7 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     *)
-      echo "Error: unknown option: $1"
+      status ERROR "Unknown option: $1"
       usage
       exit 1
       ;;
@@ -40,7 +81,7 @@ done
 need_cmd() {
   local cmd="$1"
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Error: command not found: $cmd"
+    status ERROR "Command not found: $cmd"
     exit 1
   fi
 }
@@ -76,7 +117,7 @@ show_aur_updates() {
 
 run_updates() {
   if [ "$EUID" -eq 0 ]; then
-    echo "Error: do not run this script as root. sudo is used only for pacman."
+    status ERROR "Do not run this script as root. sudo is used only for pacman."
     exit 1
   fi
 
@@ -95,7 +136,7 @@ run_updates() {
 need_cmd pacman
 need_cmd yay
 
-echo "=== Arch Linux WSL Update ==="
+print_header
 
 if [ "$MODE" = "dry-run" ]; then
   show_pacman_updates
@@ -108,10 +149,11 @@ if [ "$MODE" = "dry-run" ]; then
   echo "  sudo pacman -Sy --needed archlinux-keyring"
   echo "  sudo pacman -Syu"
   echo "  yay -Sua"
+  status OK "Dry run completed. Add --run to update packages."
 else
   run_updates
   echo ""
-  echo "=== Update Accomplished ==="
+  status OK "Update complete."
 fi
 
 show_wsl_note
