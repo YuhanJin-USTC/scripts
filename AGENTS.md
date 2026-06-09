@@ -139,7 +139,7 @@ Use this map to orient before editing. Keep it compact; it is an agent guide, no
 - `backup_archlinux/restore.sh`: restores a fresh Arch WSL setup. It is a root Bash pipeline that restores configs, installs packages, creates the user, decrypts credentials, installs AUR packages, force-syncs dotfiles/scripts, stows configs, and restores the default shell.
 - `update_archlinux/update.sh`: dry-run-first Arch/AUR update helper. Real update mode is behind `--run`.
 - `sync_file/sync_files.nu`: dry-run-first NAS sync helper. Selects a sync target by folder name or `all`; real rsync is behind `--run`.
-- `sync_file/cluster2windows.nu`: downloads selected cluster files into a flat local destination using `rsync`, include filters, and SSH keepalive options.
+- `sync_files/cluster2windows.nu`: dry-run-first cluster download helper. Downloads selected cluster files into a flat local destination using `rsync`, include filters, and SSH keepalive options; real transfer is behind `--run`.
 - `transfer_cluster_key/tsf_clst_key.nu`: copies latest downloaded SSH keys into WSL and Windows `.ssh`. Uses prefix-to-target mapping, latest-file selection, `cp -f`, and chmod.
 - `git_update/git_update.nu`: syncs one local folder to GitHub. It can initialize a repo, run `git add .`, commit, rename the branch to `main`, and push. Treat as high-risk until explicitly requested.
 - `clean_file/clean_files.nu`: cautious junk cleanup helper. Lists protected-aware candidates by default; deletion requires `--run` and explicit `DELETE`.

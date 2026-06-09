@@ -6,7 +6,7 @@ let nas_group_path = "/mnt/z/金虞焓"
 let matlab_postprocess_path = "/mnt/d/Document/Matlab"
 let nas_matlab_postprocess_path = "/mnt/z/金虞焓/Post_Process"
 let under_graduate_path = "/mnt/c/Users/17865/Desktop/Under Graduate"
-let config_base = "/home/yuhanjin/scripts/sync_file"
+let config_base = "/home/yuhanjin/scripts/sync_files"
 
 # rule file
 let rule_nas_only = "exclude_rules_nas_only"

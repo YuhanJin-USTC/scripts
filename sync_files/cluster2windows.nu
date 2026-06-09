@@ -2,18 +2,56 @@
 
 # Syncs specific files from a remote directory directly to a local destination (flat structure).
 # Logic: remote:src_dir/prefix*suffix -> local/prefix*suffix
+def status-label [status: string] {
+  match $status {
+    "OK" => $"(ansi green)OK(ansi reset)"
+    "ERROR" => $"(ansi red)ERROR(ansi reset)"
+    "DRY-RUN" => $"(ansi cyan)DRY-RUN(ansi reset)"
+    _ => $status
+  }
+}
+
+def status [label: string message: string] {
+  print $"[(status-label $label)] ($message)"
+}
+
+def filter-rule [prefix: string suffix: string] {
+  if ($prefix == "" and $suffix == "") {
+    "all files"
+  } else {
+    $"($prefix)*($suffix)"
+  }
+}
+
+def print-header [
+  remote_src: string
+  dest: path
+  prefix: string
+  suffix: string
+  dry_run: bool
+] {
+  print ""
+  print $"(ansi cyan)Cluster transfer(ansi reset)"
+  print $"Target: ($remote_src) -> ($dest)"
+  print $"Mode: (if $dry_run { 'dry-run' } else { 'run' })"
+  print $"Rule: (filter-rule $prefix $suffix)"
+  if $dry_run {
+    status "DRY-RUN" "No files will be downloaded."
+  }
+  print ""
+}
+
 def main [
   remote: string # SSH host (e.g., "user@server")
   src_dir: string # Remote source directory
   dest: path # Local destination (WSL path)
   prefix?: string # File prefix pattern (e.g., "bz")
   suffix?: string # File suffix pattern (e.g., ".sdf")
-  --dry-run (-n) # Preview changes without downloading
+  --dry-run (-n) # Preview changes without downloading, default
+  --run # download for real
 ] {
-  # Ensure local directory exists
-  if not ($dest | path exists) {
-    mkdir $dest
-  }
+  let do_dry_run = not $run
+  let dest_path = ($dest | path expand)
 
   # Ensure remote path ends with '/' to sync contents, not the directory itself
   let src_path = if ($src_dir | str ends-with "/") { $src_dir } else { $"($src_dir)/" }
@@ -34,29 +72,42 @@ def main [
     ]
   }
 
+  print-header $remote_src $dest_path $p $s $do_dry_run
+
+  if (not $do_dry_run) and not ($dest_path | path exists) {
+    mkdir $dest_path
+  }
+
   # Base flags: archive, compress, skip owner/group (for WSL/NTFS)
   mut args = [
-    "-amz", "-v", 
+    "-amz", "-v",
     "--no-o", "--no-g", "--no-perms", "--no-times", "--size-only",
     "--partial",
     "--timeout=600",
-    "-e", "ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=10" 
+    "-e", "ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=10"
   ]
 
-  if $dry_run {
+  if $do_dry_run {
     $args = ($args | append ["--dry-run"])
-    print $"(ansi yellow)[DRY RUN] Command to be executed:(ansi reset)"
   }
 
   # Construct final command arguments
-  let final_args = ($args | append $rules | append $remote_src | append $dest)
+  let final_args = ($args | append $rules | append $remote_src | append $dest_path)
+
+  print "Command:"
+  print $"  rsync ($final_args | str join ' ')"
+  print ""
 
   # Execute rsync
   try {
     ^rsync ...$final_args
-    print $"(ansi green)Sync completed successfully.(ansi reset)"
+    if $do_dry_run {
+      status "OK" "Dry run completed. Add --run to download these files."
+    } else {
+      status "OK" "Cluster transfer completed."
+    }
   } catch {
-    print $"(ansi red)Sync failed.(ansi reset)"
+    status "ERROR" "Cluster transfer failed."
     exit 1
   }
 }
