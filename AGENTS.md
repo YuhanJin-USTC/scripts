@@ -92,8 +92,8 @@ Repository scripts should be cautious by default.
 
 Current convention examples:
 
-- `clean_file/clean_files.nu <target_dir>` lists junk only; `--run` deletes after explicit `DELETE`.
-- `sync_file/sync_files.nu <target|all>` previews rsync by default; `--run` performs sync.
+- `clean_files/clean_files.nu <target_dir>` lists junk only; `--run` deletes after explicit `DELETE`.
+- `sync_files/sync_files.nu <target|all>` previews rsync by default; `--run` performs sync.
 - `update_archlinux/update.sh` previews package updates by default; `--run` performs updates.
 
 ## Validation
@@ -138,11 +138,12 @@ Use this map to orient before editing. Keep it compact; it is an agent guide, no
 - `backup_archlinux/backup.sh`: backs up Arch WSL package lists, credential archive, system config, default shell, and key Git repo checks. Uses `set -e`, explicit paths, `pacman`, `tar`, `gpg`, and Git checks.
 - `backup_archlinux/restore.sh`: restores a fresh Arch WSL setup. It is a root Bash pipeline that restores configs, installs packages, creates the user, decrypts credentials, installs AUR packages, force-syncs dotfiles/scripts, stows configs, and restores the default shell.
 - `update_archlinux/update.sh`: dry-run-first Arch/AUR update helper. Real update mode is behind `--run`.
-- `sync_file/sync_files.nu`: dry-run-first NAS sync helper. Selects a sync target by folder name or `all`; real rsync is behind `--run`.
+- `sync_files/sync_files.nu`: dry-run-first NAS sync helper. Selects a sync target by folder name or `all`; real rsync is behind `--run`.
 - `sync_files/cluster2windows.nu`: dry-run-first cluster download helper. Downloads selected cluster files into a flat local destination using `rsync`, include filters, and SSH keepalive options; real transfer is behind `--run`.
+- `sync_files/windows2cluster.nu`: dry-run-first cluster upload helper. Uploads a local simulation case directory to an explicit or cluster-root-relative remote path using preset cluster targets and `rsync`; real transfer is behind `--run`.
 - `transfer_cluster_key/tsf_clst_key.nu`: copies latest downloaded SSH keys into WSL and Windows `.ssh`. Uses prefix-to-target mapping, latest-file selection, `cp -f`, and chmod.
 - `git_update/git_update.nu`: syncs one local folder to GitHub. It can initialize a repo, run `git add .`, commit, rename the branch to `main`, and push. Treat as high-risk until explicitly requested.
-- `clean_file/clean_files.nu`: cautious junk cleanup helper. Lists protected-aware candidates by default; deletion requires `--run` and explicit `DELETE`.
+- `clean_files/clean_files.nu`: cautious junk cleanup helper. Lists protected-aware candidates by default; deletion requires `--run` and explicit `DELETE`.
 - `build_singularity_image/bd_pic_envs.nu`: builds PIC environment SIF images from explicit target records and `.def.tmpl` templates.
 - `build_singularity_image/bd_pic_images.nu`: builds EPOCH/Smilei program SIF images from local source using temp tarballs and rendered defs.
 - `build_singularity_image/test_pic_images.nu`: runs dry-run-first smoke tests for PIC images using temp run dirs and bind mount to `/work`.
