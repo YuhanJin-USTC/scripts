@@ -10,14 +10,14 @@ MODEL_FLAT_PATH = "/opt/nllb-model"
 
 
 def translate_srt(input_srt, output_srt, src_lang, tgt_lang):
-    print(f"Loading NLLB-1.3B model from flat directory...", file=sys.stderr)
+    print("[OK] Loading NLLB-1.3B model from flat directory.", file=sys.stderr)
 
-    # 1.init tokenizer
+    # Load tokenizer from the offline model directory.
     tokenizer = NllbTokenizer.from_pretrained(
         MODEL_FLAT_PATH, src_lang=src_lang, local_files_only=True
     )
 
-    # 2.init model
+    # Load model on GPU in float16.
     model = AutoModelForSeq2SeqLM.from_pretrained(
         MODEL_FLAT_PATH,
         dtype=torch.float16,
@@ -25,14 +25,14 @@ def translate_srt(input_srt, output_srt, src_lang, tgt_lang):
         local_files_only=True,
     ).to("cuda")
 
-    print(f"Parsing SRT file: {input_srt}", file=sys.stderr)
+    print(f"[OK] Parsing SRT file: {input_srt}", file=sys.stderr)
     subs = pysrt.open(input_srt)
 
     original_texts = [sub.text for sub in subs]
     translated_texts = []
 
     print(
-        f"Translating {len(original_texts)} segments from {src_lang} to {tgt_lang}...",
+        f"[OK] Translating {len(original_texts)} segments from {src_lang} to {tgt_lang}.",
         file=sys.stderr,
     )
 
@@ -57,9 +57,9 @@ def translate_srt(input_srt, output_srt, src_lang, tgt_lang):
     for i, sub in enumerate(subs):
         sub.text = translated_texts[i]
 
-    # save to new file
+    # Save translated subtitles as UTF-8 SRT.
     subs.save(output_srt, encoding="utf-8")
-    print(f"\nSuccessfully saved translated SRT to: {output_srt}", file=sys.stderr)
+    print(f"[OK] Translated SRT saved to: {output_srt}", file=sys.stderr)
 
 
 if __name__ == "__main__":

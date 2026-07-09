@@ -57,6 +57,7 @@ usage() {
     "  -h, --help  Show this help."
 }
 
+# Parse mode before checking package tools.
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run)
@@ -78,6 +79,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Require local package tools before preview or update.
 need_cmd() {
   local cmd="$1"
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -96,6 +98,7 @@ show_wsl_note() {
   fi
 }
 
+# Show official repo updates without changing packages.
 show_pacman_updates() {
   echo "[1/2] Official repo updates"
   if command -v checkupdates >/dev/null 2>&1; then
@@ -115,6 +118,7 @@ show_aur_updates() {
   yay -Qua || true
 }
 
+# Run the real update sequence.
 run_updates() {
   if [ "$EUID" -eq 0 ]; then
     status ERROR "Do not run this script as root. sudo is used only for pacman."

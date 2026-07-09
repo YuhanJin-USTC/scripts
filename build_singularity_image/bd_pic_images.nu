@@ -7,10 +7,7 @@ def main [
   program: string # epoch1d, epoch2d, epoch3d, smilei or smilei_spin
   --dry-run       # print config only
 ] {
-  # -------------------------------------------------------------------------
-  # 1. Target Configuration
-  # -------------------------------------------------------------------------
-
+  # Target configuration.
   let target_configs = {
     epoch1d: {
       source_dir: "/home/yuhanjin/Source_Code/Epoch_2025/epoch"
@@ -87,10 +84,7 @@ def main [
     }
   }
 
-  # -------------------------------------------------------------------------
-  # 2. Path Resolution & Validation
-  # -------------------------------------------------------------------------
-
+  # Resolve paths before archiving or building.
   if $program not-in ($target_configs | columns) {
     error make {msg: $"Unknown program: ($program)"}
   }
@@ -110,24 +104,24 @@ def main [
   check-path $env_image "environment image"
   check-path $template_path "definition template"
 
-  print $"Program:      ($program)"
-  print $"Source:       ($source_dir)"
-  print $"Env image:    ($env_image)"
-  print $"Work dir:     ($work_dir)"
-  print $"Template:     ($template_path)"
-  print $"Image:        ($image_path)"
-  print $"Engine:       ($engine)"
-  print "Overwrite:    true"
-
+  title "PIC program image build"
+  field "Target" $program
+  field "Mode" (if $dry_run { "dry-run" } else { "run" })
+  field "Rule" "archive source, render template, build image with --force"
+  field "Source" $source_dir
+  field "Env image" $env_image
+  field "Work dir" $work_dir
+  field "Template" $template_path
+  field "Image" $image_path
+  field "Engine" $engine
+  field "Overwrite" "true"
   if $dry_run {
-    print "Dry run complete."
+    status "DRY-RUN" "No image will be built."
+    status "OK" "Dry run complete."
     return
   }
 
-  # -------------------------------------------------------------------------
-  # 3. Build
-  # -------------------------------------------------------------------------
-
+  # Render the definition and source archive in a temporary build directory.
   let start_dir = (pwd)
   let temp_dir = (mktemp -d)
   let temp_def = ($temp_dir | path join ($cfg.template_name | str replace ".tmpl" ""))
@@ -137,15 +131,15 @@ def main [
     let parent_dir = ($source_dir | path dirname)
     let base_name = ($source_dir | path basename)
 
-    print $"Temporary dir: ($temp_dir)"
-    print "Archiving source code..."
+    field "Temporary dir" $temp_dir
+    status "OK" "Archiving source code."
     tar -czf $tar_path -C $parent_dir $base_name
 
     render-template $template_path $temp_def (image-template-values $cfg $env_image)
     ensure-rendered $temp_def
 
     cd $temp_dir
-    print $"Building image: ($image_path)"
+    status "OK" $"Building image: ($image_path)"
     sudo -E $engine build --force $image_path ($temp_def | path basename)
   } catch {|err|
     cd $start_dir
@@ -156,12 +150,8 @@ def main [
   cd $start_dir
   clean-temp-dir $temp_dir
 
-  print ""
-  print "#############################################"
-  print "  Build accomplished."
-  print $"  Image file: ($image_path)"
-  print $"  Run test:   ($engine) exec ($image_path) ($cfg.exec_name)"
-  print "#############################################"
+  status "OK" $"Build accomplished. Image file: ($image_path)"
+  field "Run test" $"($engine) exec ($image_path) ($cfg.exec_name)"
 }
 
 def image-template-values [cfg: record env_image: string] {

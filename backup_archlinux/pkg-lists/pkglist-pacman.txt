@@ -32,6 +32,7 @@ shfmt
 stow
 sudo
 tree
+tree-sitter-cli
 ttf-jetbrains-mono-nerd
 unzip
 wget

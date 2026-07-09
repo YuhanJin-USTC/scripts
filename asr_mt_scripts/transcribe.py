@@ -7,7 +7,7 @@ from faster_whisper import WhisperModel
 
 
 def format_timestamp(seconds):
-    """Converts seconds to SRT time format (HH:MM:SS,mmm)."""
+    """Convert seconds to SRT time format."""
     hours = math.floor(seconds / 3600)
     seconds %= 3600
     minutes = math.floor(seconds / 60)
@@ -18,12 +18,11 @@ def format_timestamp(seconds):
 
 
 def generate_subtitles(filename, model_size, compute_type, language, vad_filter):
-
-    # Initialize model
-    print(f"Loading model '{model_size}' ({compute_type}) on GPU...", file=sys.stderr)
+    # Load the GPU Whisper model inside the ASR container.
+    print(f"[OK] Loading model: {model_size} ({compute_type})", file=sys.stderr)
     model = WhisperModel(model_size, device="cuda", compute_type=compute_type)
 
-    print(f"Running task 'transcribe' on '{filename}'...", file=sys.stderr)
+    print(f"[OK] Transcribing: {filename}", file=sys.stderr)
 
     segments, info = model.transcribe(
         filename,
@@ -35,10 +34,11 @@ def generate_subtitles(filename, model_size, compute_type, language, vad_filter)
 
     if info.language_probability > 0:
         print(
-            f"Detected Source Language: '{info.language}' ({info.language_probability:.2f})"
+            f"[OK] Detected source language: {info.language} ({info.language_probability:.2f})",
+            file=sys.stderr,
         )
 
-    # Generate SRT output path
+    # Write SRT next to the input file.
     base_name = os.path.splitext(filename)[0]
     suffix = ".srt"
     output_file = f"{base_name}{suffix}"
@@ -51,20 +51,22 @@ def generate_subtitles(filename, model_size, compute_type, language, vad_filter)
             print(f"[{start_time} --> {end_time}] {text}", file=sys.stderr)
             f.write(f"{i}\n{start_time} --> {end_time}\n{text}\n\n")
 
-    print(f"\n Subtitles saved to: {output_file}", file=sys.stderr)
+    print(f"[OK] Subtitles saved to: {output_file}", file=sys.stderr)
     sys.stdout.write(f"OUTPUT_SRT:{output_file}\n")
     sys.stdout.flush()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("filename", help="Path to input file")
-    parser.add_argument("--model", default="large-v3", help="Model size")
+    parser = argparse.ArgumentParser(
+        description="Generate SRT subtitles with faster-whisper."
+    )
+    parser.add_argument("filename", help="Path to input media file")
+    parser.add_argument("--model", default="large-v3", help="Whisper model size")
     parser.add_argument(
         "--vad", action="store_true", help="Enable VAD filter to remove silences"
     )
-    parser.add_argument("--precision", default="float16", help="Compute type")
-    parser.add_argument("--language", default=None, help="Source language")
+    parser.add_argument("--precision", default="float16", help="CUDA compute type")
+    parser.add_argument("--language", default=None, help="Source language code")
 
     args = parser.parse_args()
 

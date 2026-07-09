@@ -5,6 +5,7 @@
 def status-label [status: string] {
   match $status {
     "OK" => $"(ansi green)OK(ansi reset)"
+    "SKIP" => $"(ansi yellow)SKIP(ansi reset)"
     "ERROR" => $"(ansi red)ERROR(ansi reset)"
     "DRY-RUN" => $"(ansi cyan)DRY-RUN(ansi reset)"
     _ => $status
@@ -31,7 +32,7 @@ def print-header [
   dry_run: bool
 ] {
   print ""
-  print $"(ansi cyan)Cluster transfer(ansi reset)"
+  print $"(ansi cyan)Cluster download(ansi reset)"
   print $"Target: ($remote_src) -> ($dest)"
   print $"Mode: (if $dry_run { 'dry-run' } else { 'run' })"
   print $"Rule: (filter-rule $prefix $suffix)"
@@ -78,7 +79,7 @@ def main [
     mkdir $dest_path
   }
 
-  # Base flags: archive, compress, skip owner/group (for WSL/NTFS)
+  # Base rsync flags: archive, compress, skip owner/group for WSL/NTFS.
   mut args = [
     "-amz", "-v",
     "--no-o", "--no-g", "--no-perms", "--no-times", "--size-only",
@@ -98,7 +99,7 @@ def main [
   print $"  rsync ($final_args | str join ' ')"
   print ""
 
-  # Execute rsync
+  # Run rsync or its dry-run preview.
   try {
     ^rsync ...$final_args
     if $do_dry_run {

@@ -1,5 +1,6 @@
 #!/usr/bin/env nu
 
+# Keep credentials and backup payloads out of cleanup.
 def path-has-protected-part [path: string] {
   let parts = ($path | path split)
 
@@ -10,6 +11,7 @@ def path-has-protected-part [path: string] {
   ($path | str contains "/backup_archlinux/data/") or ($path | str ends-with "/backup_archlinux/data")
 }
 
+# Treat research data, source, configs, and archives as protected files.
 def protected-extension? [path: string] {
   let ext = ($path | path parse | get extension | str downcase)
 
@@ -61,6 +63,7 @@ def junk-dir? [path: string] {
   $base in [__pycache__ .pytest_cache .mypy_cache .ruff_cache .ipynb_checkpoints]
 }
 
+# Refuse broad cleanup targets.
 def assert-safe-target [target: string] {
   let home = ($env.HOME | path expand)
   let repo = ("/home/yuhanjin/scripts" | path expand)
@@ -78,6 +81,7 @@ def assert-safe-target [target: string] {
   }
 }
 
+# Collect explicit junk candidates only.
 def list-candidates [target: string] {
   let pattern = ($target | path join "**/*")
   let paths = (
@@ -103,6 +107,7 @@ def list-candidates [target: string] {
   {files: $files, junk_dirs: $junk_dirs}
 }
 
+# Compute directories that become empty after candidate removal.
 def list-empty-dirs-after [
   target: string
   files: list<string>
@@ -202,6 +207,7 @@ def main [
     return
   }
 
+  # Require a typed confirmation before deletion.
   let answer = (input "Type DELETE to permanently remove these paths: ")
 
   if $answer != "DELETE" {

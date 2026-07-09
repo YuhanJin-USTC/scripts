@@ -7,10 +7,7 @@ def main [
   program: string = "all" # all, epoch1d, epoch2d, epoch3d, smilei or smilei_spin
   --dry-run              # print commands only
 ] {
-  # -------------------------------------------------------------------------
-  # 1. Target Configuration
-  # -------------------------------------------------------------------------
-
+  # Test target configuration.
   let test_configs = {
     epoch1d: {
       image: "/home/yuhanjin/Code_Program/Epoch/Epoch1d/epoch_epoch1d.sif"
@@ -39,10 +36,7 @@ def main [
     }
   }
 
-  # -------------------------------------------------------------------------
-  # 2. Target Selection
-  # -------------------------------------------------------------------------
-
+  # Select one target or all configured targets.
   let targets = if $program == "all" {
     $test_configs | columns
   } else if $program in ($test_configs | columns) {
@@ -53,10 +47,6 @@ def main [
 
   let script_dir = ($env.CURRENT_FILE | path dirname | path expand)
   let engine = (select-engine)
-
-  # -------------------------------------------------------------------------
-  # 3. Run Tests
-  # -------------------------------------------------------------------------
 
   for target in $targets {
     let cfg = ($test_configs | get $target)
@@ -71,18 +61,24 @@ def main [
     check-path $image $"($target) image"
     check-path $input_dir $"($target) input directory"
 
-    print ""
-    print $"=== Testing ($target) ==="
-    print $"Image:   ($image)"
-    print $"Input:   ($input_dir)"
-    print $"Run dir: ($run_dir)"
+    title "PIC image smoke test"
+    field "Target" $target
+    field "Mode" (if $dry_run { "dry-run" } else { "run" })
+    field "Rule" "bind test input to /work and run startup command"
+    field "Image" $image
+    field "Input" $input_dir
+    field "Run dir" $run_dir
 
     let shell_cmd = $"cd /work && ($cfg.command)"
-    print $"Command: ($engine) exec --bind ($run_dir):/work ($image) sh -lc '($shell_cmd)'"
+    field "Command" $"($engine) exec --bind ($run_dir):/work ($image) sh -lc '($shell_cmd)'"
 
-    if not $dry_run {
+    if $dry_run {
+      status "DRY-RUN" "No smoke test will be run."
+    } else {
+      # Copy smoke-test inputs into the isolated run directory.
       cp -r (($input_dir | path join "*") | into glob) $run_dir
       ^$engine exec --bind $"($run_dir):/work" $image sh -lc $shell_cmd
+      status "OK" $"Smoke test completed: ($target)"
     }
   }
 }

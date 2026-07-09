@@ -7,10 +7,7 @@ def main [
   program: string # epoch, smilei or smilei_spin
   --dry-run       # print config only
 ] {
-  # -------------------------------------------------------------------------
-  # 1. Target Configuration
-  # -------------------------------------------------------------------------
-
+  # Target configuration.
   let target_configs = {
     epoch: {
       work_dir: "/home/yuhanjin/Code_Program/Env/Epoch"
@@ -45,10 +42,7 @@ def main [
     }
   }
 
-  # -------------------------------------------------------------------------
-  # 2. Path Resolution & Validation
-  # -------------------------------------------------------------------------
-
+  # Resolve paths before any external build command.
   if $program not-in ($target_configs | columns) {
     error make {msg: $"Unknown program: ($program)"}
   }
@@ -64,33 +58,33 @@ def main [
   check-path $work_dir "work directory"
   check-path $template_path "definition template"
 
-  print $"Program:      ($program)"
-  print $"Work dir:     ($work_dir)"
-  print $"Template:     ($template_path)"
-  print $"Image:        ($image_path)"
-  print $"Engine:       ($engine)"
-  print "Overwrite:    true"
-
+  title "PIC environment image build"
+  field "Target" $program
+  field "Mode" (if $dry_run { "dry-run" } else { "run" })
+  field "Rule" "render template then build image with --force"
+  field "Work dir" $work_dir
+  field "Template" $template_path
+  field "Image" $image_path
+  field "Engine" $engine
+  field "Overwrite" "true"
   if $dry_run {
-    print "Dry run complete."
+    status "DRY-RUN" "No image will be built."
+    status "OK" "Dry run complete."
     return
   }
 
-  # -------------------------------------------------------------------------
-  # 3. Build
-  # -------------------------------------------------------------------------
-
+  # Render the definition in a temporary build directory.
   let start_dir = (pwd)
   let temp_dir = (mktemp -d)
   let temp_def = ($temp_dir | path join ($cfg.template_name | str replace ".tmpl" ""))
 
   try {
-    print $"Temporary dir: ($temp_dir)"
+    field "Temporary dir" $temp_dir
     render-template $template_path $temp_def (env-template-values $cfg)
     ensure-rendered $temp_def
 
     cd $temp_dir
-    print $"Building image: ($image_path)"
+    status "OK" $"Building image: ($image_path)"
     sudo -E $engine build --force $image_path ($temp_def | path basename)
   } catch {|err|
     cd $start_dir
@@ -101,11 +95,7 @@ def main [
   cd $start_dir
   clean-temp-dir $temp_dir
 
-  print ""
-  print "#############################################"
-  print "  Build accomplished."
-  print $"  Image file: ($image_path)"
-  print "#############################################"
+  status "OK" $"Build accomplished. Image file: ($image_path)"
 }
 
 def env-template-values [cfg: record] {

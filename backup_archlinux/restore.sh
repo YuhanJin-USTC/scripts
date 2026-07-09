@@ -13,6 +13,52 @@ SOCKS_URL="socks5://127.0.0.1:7890"
 RESTORE_STAMP=$(date +%Y%m%d_%H%M%S)
 RESTORE_BACKUP_DIR="/root/arch_restore_backup_$RESTORE_STAMP"
 
+color() {
+  printf '\033[%sm%s\033[0m' "$1" "$2"
+}
+
+status_label() {
+  case "$1" in
+    OK) color 32 OK ;;
+    SKIP) color 33 SKIP ;;
+    ERROR) color 31 ERROR ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+status() {
+  printf '[%s] %s\n' "$(status_label "$1")" "$2"
+}
+
+field() {
+  printf '%s: %s\n' "$1" "$2"
+}
+
+usage() {
+  printf '%s\n' \
+    "Usage: $0" \
+    "" \
+    "Restore an Arch Linux WSL setup from backup_archlinux payloads." \
+    "Run as root only after reviewing the script and backup data." \
+    "" \
+    "Options:" \
+    "  -h, --help  Show this help."
+}
+
+print_header() {
+  echo ""
+  color 36 "Arch Linux WSL restore"
+  echo ""
+  field "Target" "$TARGET_HOME"
+  field "Mode" "run"
+  field "Rule" "restore backup payloads and force-sync configured repos"
+  echo ""
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  usage
+  exit 0
+fi
 backup_existing_path() {
   local target=$1
   local rel
@@ -63,11 +109,11 @@ restore_sensitive_file() {
 }
 
 if [ "$EUID" -ne 0 ]; then
-  echo "Error: This restore pipeline MUST be executed as root."
+  status ERROR "This restore pipeline MUST be executed as root."
   exit 1
 fi
 
-echo "=== Arch Linux WSL Restore Pipeline ==="
+print_header
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 if [ -d "$SCRIPT_DIR/data" ]; then
@@ -75,10 +121,10 @@ if [ -d "$SCRIPT_DIR/data" ]; then
 elif [ -d "$SCRIPT_DIR/backup_archlinux/data" ]; then
   BACKUP_ROOT="$SCRIPT_DIR/backup_archlinux"
 else
-  echo "Error: Cannot locate backup data directory."
+  status ERROR "Cannot locate backup data directory."
   exit 1
 fi
-echo "  -> Resolved BACKUP_ROOT: $BACKUP_ROOT"
+field "Backup root" "$BACKUP_ROOT"
 
 echo "[0/9] Restore system configurations..."
 if [ -f "$BACKUP_ROOT/data/sys_config.tar.gz" ]; then
@@ -244,7 +290,7 @@ export http_proxy="$PROXY_URL"
 export https_proxy="$PROXY_URL"
 export all_proxy="$SOCKS_URL"
 
-# Improved Force Sync Function to kill nested dirs and conflicts
+# Force remote state for restored repos.
 force_sync_repo() {
   local url=\$1
   local path=\$2
@@ -310,4 +356,4 @@ if [ -f "$SHELL_FILE" ]; then
   fi
 fi
 
-echo "=== Restore Accomplished ==="
+status OK "Restore accomplished."
