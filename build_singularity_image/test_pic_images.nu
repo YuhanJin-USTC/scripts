@@ -37,13 +37,14 @@ def main [
   }
 
   # Select one target or all configured targets.
-  let targets = if $program == "all" {
-    $test_configs | columns
-  } else if $program in ($test_configs | columns) {
-    [$program]
-  } else {
+  let configured_targets = ($test_configs | columns)
+  if $program != "all" and $program not-in $configured_targets {
     error make {msg: $"Unknown program: ($program)"}
   }
+  let targets = (
+    $configured_targets
+    | where {|target| $program == "all" or $target == $program }
+  )
 
   let script_dir = ($env.CURRENT_FILE | path dirname | path expand)
   let engine = (select-engine)

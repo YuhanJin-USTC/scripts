@@ -1,26 +1,94 @@
 # scripts
 
-Personal research-efficiency scripts for Arch Linux on WSL, Windows/NAS file
-movement, cluster transfers, PIC container workflows, and ASR/MT helpers.
+Personal research-automation toolkit for laser-plasma theory and simulation
+workflows. It covers Arch Linux on WSL, Windows/NAS/cluster file movement,
+backup and restore, PIC container builds and runs, and GPU subtitle processing.
 
-The repository is intentionally flat and script-first. Most values that change
-often, such as paths, image names, cluster aliases, and job counts, live near the
-top of each script.
+This is a script-first personal repository, not a portable software package.
+The explicit paths, cluster aliases, image names, job counts, and target records
+near the top of each script are intentional: they keep daily research workflows
+easy to inspect and edit.
+
+## Design Goals
+
+- Save time on repeated research and workstation tasks.
+- Keep commands transparent and manually editable.
+- Preview external changes where the current interface supports it.
+- Protect credentials, backup payloads, source trees, simulation data, and
+  reproducibility.
+- Keep EPOCH, Smilei, and Smilei-Spin build/run configuration explicit.
+
+## Environment
+
+The configured environment is:
+
+- Arch Linux under WSL.
+- Repository path: `/home/yuhanjin/scripts`.
+- Windows mounts: `/mnt/c` and `/mnt/d`.
+- NAS mounts: `/mnt/y` and `/mnt/z/金虞焓`.
+- SSH aliases: `hfcluster`, `tycluster`, and `wzcluster`.
+
+There is no global installer or repository-wide dependency command. Install only
+the tools required by the workflow you use.
+
+| Workflow | Required tools or resources |
+| --- | --- |
+| Core scripts | Bash, Nushell, standard Linux utilities |
+| NAS/cluster transfer | `rsync`, OpenSSH, configured mounts/SSH aliases |
+| Arch maintenance | `pacman`, `yay`; `checkupdates` is optional |
+| Backup/restore | `tar`, `gpg`, Git, `stow`, Arch package tools |
+| PIC image build | Container engine, `sudo`, source/image paths |
+| PIC run | `apptainer` and the configured SIF image |
+| ASR/MT | `singularity`, NVIDIA GPU access in WSL, local ASR/MT images |
+| Subtitle burn-in | `ffmpeg` in addition to the ASR/MT requirements |
+
+The Python helpers are designed to run inside their corresponding containers;
+their packages are not managed as a host-side Python environment.
+
+## Before First Use
+
+1. Place the repository at `/home/yuhanjin/scripts`, or update every intentional
+   absolute reference before running anything.
+2. Review the editable variables at the top of the relevant script.
+3. Confirm required Windows/NAS mounts, SSH aliases, source trees, and SIF images.
+4. Read `--help` and use the documented preview mode when one exists.
+5. Inspect every real-only workflow before execution.
 
 ## Safety Model
 
-Scripts that can change external state are cautious where practical.
+The scripts do not all share the same default mode. Check this table before
+running a command:
 
-- `sync_files/sync_files.nu`, `sync_files/cluster2windows.nu`,
-  `sync_files/windows2cluster.nu`, `clean_files/clean_files.nu`, and
-  `update_archlinux/update.sh` default to preview or dry-run behavior.
-- Real sync, transfer, cleanup, or update actions require `--run` where the
-  script supports it.
-- Restore, backup, Git sync, SSH key copy, and container build scripts should be
-  read carefully before running because they intentionally perform real system,
-  credential, Git, or image operations.
+| Workflow | Default | Real action |
+| --- | --- | --- |
+| `update_archlinux/update.sh` | Preview | Add `--run` |
+| `sync_files/sync_files.nu` | Preview | Add `--run` |
+| `sync_files/windows2cluster.nu` | Preview | Add `--run` |
+| `sync_files/cluster2windows.nu` | Preview | Add `--run` |
+| `clean_files/clean_files.nu` | Preview | Add `--run`, then type `DELETE` |
+| PIC image build scripts | **Real build** | Add `--dry-run` to preview |
+| PIC smoke-test script | **Real test** | Add `--dry-run` to preview |
+| Backup/restore, key/Git sync, PIC run, ASR/MT | **Real** | No dry run |
 
-## Common Commands
+Important boundaries:
+
+- Sync scripts do not use `rsync --delete`.
+- Cluster upload excludes common large output formats unless `--all-files` is
+  supplied.
+- Backup writes fixed package-list and archive paths under `backup_archlinux/`.
+- Restore changes the system, installs packages, restores credentials, and
+  force-synchronizes configured Git repositories. It must be reviewed and run
+  as root only when a full restore is intended.
+- SSH key sync uses forced copies to fixed WSL and Windows key paths.
+- Git sync can initialize a repository, stage all changes, commit, rename the
+  branch to `main`, and push.
+- PIC builds use `build --force` and can replace an existing SIF image.
+- Subtitle burn-in uses FFmpeg overwrite mode for the generated output name.
+
+## Quick Start
+
+These commands inspect help or preview behavior without intentionally performing
+the corresponding real workflow:
 
 ```bash
 # Arch/AUR update preview
@@ -36,69 +104,255 @@ nu sync_files/windows2cluster.nu hfcluster /path/to/case Simulation/case
 nu sync_files/cluster2windows.nu hfcluster /remote/path /local/path bz .sdf
 
 # Junk cleanup preview
-nu clean_files/clean_files.nu /path/to/project
+./clean_files/clean_files /path/to/project
 
-# PIC image build preview
+# PIC program-image build preview
 nu build_singularity_image/bd_pic_images.nu smilei --dry-run
 
 # PIC image smoke-test preview
 nu build_singularity_image/test_pic_images.nu all --dry-run
+
+# Real-only workflow help
+bash backup_archlinux/backup.sh --help
+./backup_archlinux/restore.sh --help
+./run_pic/smilei_run.sh --help
 ```
 
-## Script Map
+Container previews still validate configured executables and paths, so they can
+fail safely when the local PIC environment has not been prepared.
+
+## Usage Reference
+
+Run all examples from the repository root unless noted otherwise.
 
 ### Arch Linux WSL
 
-- `update_archlinux/update.sh` previews and runs official repo plus AUR updates.
-- `backup_archlinux/backup.sh` records package lists, archives selected system
-  and home configuration, archives sensitive credentials with GPG, and checks
-  important Git repositories.
-- `backup_archlinux/restore.sh` restores a fresh Arch WSL setup from the backup
-  payloads and remote Git repositories. Run only after reviewing the script.
+Preview official-repository and AUR updates:
 
-### File Sync And Transfer
+```bash
+./update_archlinux/update.sh
+```
 
-- `sync_files/sync_files.nu` syncs selected local folders to NAS locations using
-  rsync and `sync_files/exclude_rules_nas_only`.
-- `sync_files/windows2cluster.nu` uploads a local simulation case directory to a
-  configured cluster target. It uses `sync_files/exclude_rules_cluster_upload`
-  unless `--all-files` is used.
-- `sync_files/cluster2windows.nu` downloads selected remote files into a flat
-  local destination using optional prefix/suffix filters.
-- `clean_files/clean_files.nu` lists safe junk candidates by default and deletes
-  only after `--run` plus an explicit `DELETE` confirmation.
+Perform the real update only after reviewing the preview:
 
-### PIC Containers And Runs
+```bash
+./update_archlinux/update.sh --run
+```
 
-- `build_singularity_image/bd_pic_envs.nu` builds environment images for EPOCH,
-  Smilei, and Smilei-Spin from `.def.tmpl` templates.
-- `build_singularity_image/bd_pic_images.nu` builds runnable PIC program images
-  from local source trees and environment images.
-- `build_singularity_image/test_pic_images.nu` runs dry-run-first smoke tests
-  against the built program images.
-- `run_pic/*.sh` runs EPOCH or Smilei inputs in the corresponding Apptainer
-  image and writes results into timestamped `Results_*` directories.
+The backup workflow has no dry-run mode. It records package lists, creates
+selected configuration archives, encrypts credential data with GPG, and checks
+the Git state of core directories:
 
-### ASR And Translation
+```bash
+bash backup_archlinux/backup.sh
+```
 
-- `asr_mt_scripts/asr_mt.nu` runs the video subtitle pipeline:
-  Whisper transcription, optional NLLB translation, and optional FFmpeg subtitle
-  burn-in.
-- `asr_mt_scripts/transcribe.py` is the container-side faster-whisper helper.
-- `asr_mt_scripts/translate.py` is the container-side NLLB SRT translation
-  helper.
+`backup_archlinux/restore.sh` is a root-only disaster-recovery pipeline. Review
+the complete script and payloads under `backup_archlinux/` before running it.
+
+### NAS Sync
+
+```bash
+nu sync_files/sync_files.nu <target|all> [--run]
+```
+
+Configured targets are `dot_files`, `scripts`, `Code_Program`, `Simulation`,
+`Source_Code`, `Under_Graduate`, and `Matlab`. Without `--run`, rsync runs in
+preview mode. The script logs to `~/.cache/sync_files.log`.
+
+Examples:
+
+```bash
+# Preview one target
+nu sync_files/sync_files.nu Simulation
+
+# Run all configured syncs
+nu sync_files/sync_files.nu all --run
+```
+
+NAS exclusion rules live in `sync_files/exclude_rules_nas_only`.
+
+### Cluster Upload
+
+```bash
+nu sync_files/windows2cluster.nu \
+  <hfcluster|tycluster|wzcluster> \
+  <local_directory> \
+  <remote_directory> \
+  [--run] [--all-files]
+```
+
+A relative remote directory is resolved below the selected cluster's configured
+root. An absolute remote directory is used unchanged. The default rule file is
+`sync_files/exclude_rules_cluster_upload`; `--all-files` bypasses it. Uploads use
+`--update` and do not delete remote files.
+
+```bash
+# Preview source/config upload
+nu sync_files/windows2cluster.nu \
+  hfcluster /home/yuhanjin/Simulation/case_a Simulation/case_a
+
+# Perform the same upload
+nu sync_files/windows2cluster.nu \
+  hfcluster /home/yuhanjin/Simulation/case_a Simulation/case_a --run
+```
+
+### Cluster Download
+
+```bash
+nu sync_files/cluster2windows.nu \
+  <ssh_host> <remote_directory> <local_directory> \
+  [prefix] [suffix] [--run]
+```
+
+The optional prefix and suffix form the flat file filter `prefix*suffix`.
+Omitting both transfers all files selected by rsync.
+
+```bash
+# Preview bz*.sdf download
+nu sync_files/cluster2windows.nu \
+  hfcluster /remote/results /mnt/d/results bz .sdf
+
+# Perform the download
+nu sync_files/cluster2windows.nu \
+  hfcluster /remote/results /mnt/d/results bz .sdf --run
+```
+
+### Protected Cleanup
+
+```bash
+./clean_files/clean_files <target_directory> [--run]
+```
+
+Preview mode lists only explicit cache/editor junk and empty directories. It
+protects credentials, backup data, source, PIC inputs, templates, papers,
+configuration, archives, and common research-data formats. Real deletion
+requires both `--run` and an exact `DELETE` confirmation.
+
+### PIC Environment And Program Images
+
+Environment targets are `epoch`, `smilei`, and `smilei_spin`:
+
+```bash
+# Preview
+nu build_singularity_image/bd_pic_envs.nu smilei --dry-run
+
+# Real build: no --dry-run flag
+nu build_singularity_image/bd_pic_envs.nu smilei
+```
+
+Program targets are `epoch1d`, `epoch2d`, `epoch3d`, `smilei`, and
+`smilei_spin`:
+
+```bash
+# Preview
+nu build_singularity_image/bd_pic_images.nu epoch2d --dry-run
+
+# Real build: no --dry-run flag
+nu build_singularity_image/bd_pic_images.nu epoch2d
+```
+
+Build scripts package local source into a temporary directory, render a matching
+`*.def.tmpl`, and build the configured SIF with `--force`. Source paths, image
+paths, HDF5 settings, job counts, compilers, and executable names are explicit
+in the build scripts.
+
+### PIC Smoke Tests
+
+```bash
+# Preview every configured test
+nu build_singularity_image/test_pic_images.nu all --dry-run
+
+# Run one real test: no --dry-run flag
+nu build_singularity_image/test_pic_images.nu smilei_spin
+```
+
+The smoke inputs under `build_singularity_image/pic_test_inputs/` check startup,
+input parsing, executable linkage, MPI/HDF5 availability, and a short time loop.
+
+### PIC Runs
+
+Each runner accepts one input and an optional positive MPI process count. It
+copies the input into a timestamped `Results_*` directory created below the
+current directory, then runs the configured Apptainer image there.
+
+```bash
+# EPOCH
+./run_pic/epoch1d_run.sh /path/to/input.deck [mpi_procs]
+./run_pic/epoch2d_run.sh /path/to/input.deck [mpi_procs]
+./run_pic/epoch3d_run.sh /path/to/input.deck [mpi_procs]
+
+# Smilei
+./run_pic/smilei_run.sh /path/to/namelist.py [mpi_procs]
+./run_pic/smilei_spin_run.sh /path/to/namelist.py [mpi_procs]
+```
+
+### ASR, Translation, And Subtitle Burn-In
+
+The Nushell pipeline runs faster-whisper transcription, optional offline NLLB
+translation, and optional FFmpeg burn-in:
+
+```bash
+# Transcription only
+nu asr_mt_scripts/asr_mt.nu /path/to/video.mp4 --vad
+
+# Transcribe, translate English to Simplified Chinese, and burn subtitles
+nu asr_mt_scripts/asr_mt.nu /path/to/video.mp4 \
+  --vad --translate --src-lang eng_Latn --tgt-lang zho_Hans --burn
+```
+
+Generated SRT and video files are written next to the input media. The configured
+container paths are under `~/Code_Program/asr_mt_containers`.
 
 ### Account Helpers
 
-- `transfer_cluster_key/tsf_clst_key.nu` copies the newest downloaded cluster
-  SSH keys into WSL and Windows `.ssh` targets.
-- `git_update/git_update.nu` initializes or syncs a local directory to a GitHub
-  repository with the same folder name. It stages, commits, and pushes when
-  changes exist.
+Both helpers are real-only workflows:
+
+```bash
+# Copy newest matching cluster keys to fixed WSL and Windows targets
+nu transfer_cluster_key/tsf_clst_key.nu
+
+# Initialize/sync a local folder to YuhanJin-USTC/<folder>.git
+nu git_update/git_update.nu /path/to/folder "Commit message"
+```
+
+Review the source paths, destination paths, Git account, and resulting changes
+before running either command.
+
+## Repository Layout
+
+```text
+.
+├── AGENTS.md                    # Coding-agent operating instructions
+├── README.md                    # Human-facing guide
+├── asr_mt_scripts/              # Whisper, NLLB, and FFmpeg pipeline
+├── backup_archlinux/            # Backup/restore scripts and protected payloads
+├── build_singularity_image/     # PIC templates, builders, and smoke inputs
+├── clean_files/                 # Safe-by-default cleanup and launcher
+├── git_update/                  # Real-only GitHub sync helper
+├── run_pic/                     # EPOCH/Smilei Apptainer runners
+├── sync_files/                  # NAS/cluster rsync scripts and rule files
+├── transfer_cluster_key/        # Real-only SSH key deployment
+└── update_archlinux/            # Dry-run-first Arch/AUR updates
+```
+
+## Configuration Points
+
+| Area | Edit here |
+| --- | --- |
+| NAS sources and destinations | Top of `sync_files/sync_files.nu` |
+| NAS exclusions | `sync_files/exclude_rules_nas_only` |
+| Cluster aliases and roots | Top of `sync_files/windows2cluster.nu` |
+| Cluster upload exclusions | `sync_files/exclude_rules_cluster_upload` |
+| SSH key source, names, destinations | `transfer_cluster_key/tsf_clst_key.nu` |
+| GitHub account and remote naming | `git_update/git_update.nu` |
+| PIC source, image, build, HDF5, jobs | `bd_pic_envs.nu`, `bd_pic_images.nu` |
+| PIC runtime image and executable | Matching script under `run_pic/` |
+| ASR/MT image paths and defaults | `asr_mt_scripts/asr_mt.nu` |
 
 ## Validation
 
-Use the narrowest syntax check for edited scripts:
+Use the narrowest syntax check for an edited file:
 
 ```bash
 nu --ide-check 100 path/to/script.nu
@@ -106,5 +360,15 @@ bash -n path/to/script.sh
 python -m py_compile path/to/script.py
 ```
 
-For sync, transfer, update, cleanup, and container workflows, validate with
-`--help`, dry-run output, or command previews before running real operations.
+For sync, transfer, update, cleanup, and container changes, inspect help and
+command previews before any real execution. Do not use a real backup, restore,
+key transfer, Git push, package update, container build, or simulation run as a
+validation step.
+
+## Coding-Agent Guidance
+
+Repository-wide instructions for coding agents live in [`AGENTS.md`](AGENTS.md).
+They define scope, safety boundaries, code conventions, subsystem contracts,
+validation, and completion criteria. Nested `AGENTS.md` files may be added later
+only when a subtree needs genuinely different instructions. The plural filename
+follows the [open AGENTS.md convention](https://agents.md/).

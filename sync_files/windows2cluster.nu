@@ -37,7 +37,7 @@ def check-command [cmd: string] {
 
 # Target name normalization and lookup.
 def cluster-key [name: string] {
-  $name | str downcase | str replace --all " " "_"
+  $name | str lowercase | str replace --all " " "_"
 }
 
 def select-cluster [target: string] {
