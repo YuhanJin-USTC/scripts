@@ -86,6 +86,9 @@ def main [
     cd $temp_dir
     status "OK" $"Building image: ($image_path)"
     sudo -E $engine build --force $image_path ($temp_def | path basename)
+    if $env.LAST_EXIT_CODE != 0 {
+      error make {msg: $"Image build failed with code ($env.LAST_EXIT_CODE)"}
+    }
   } catch {|err|
     cd $start_dir
     clean-temp-dir $temp_dir

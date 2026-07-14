@@ -132,7 +132,7 @@ def print-plan [items: list rule_file: string] {
 }
 
 def sync-key [name: string] {
-  $name | str downcase | str replace --all " " "_"
+  $name | str lowercase | str replace --all " " "_"
 }
 
 def item-names [item: record] {

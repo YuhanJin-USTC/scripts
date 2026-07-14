@@ -34,6 +34,7 @@ the tools required by the workflow you use.
 | Workflow | Required tools or resources |
 | --- | --- |
 | Core scripts | Bash, Nushell, standard Linux utilities |
+| iWAN route update | WSL, `powershell.exe`, `wslpath`, Panabit iWAN 2.1.3 |
 | NAS/cluster transfer | `rsync`, OpenSSH, configured mounts/SSH aliases |
 | Arch maintenance | `pacman`, `yay`; `checkupdates` is optional |
 | Backup/restore | `tar`, `gpg`, Git, `stow`, Arch package tools |
@@ -62,6 +63,7 @@ running a command:
 | Workflow | Default | Real action |
 | --- | --- | --- |
 | `update_archlinux/update.sh` | Preview | Add `--run` |
+| `update_iwan_routes/update_iwan_routes` | Preview | Exit iWAN, then add `--run` |
 | `sync_files/sync_files.nu` | Preview | Add `--run` |
 | `sync_files/windows2cluster.nu` | Preview | Add `--run` |
 | `sync_files/cluster2windows.nu` | Preview | Add `--run` |
@@ -73,6 +75,8 @@ running a command:
 Important boundaries:
 
 - Sync scripts do not use `rsync --delete`.
+- iWAN route updates modify Panabit settings only after `--run`, and refuse to
+  write while the client is running.
 - Cluster upload excludes common large output formats unless `--all-files` is
   supplied.
 - Backup writes fixed package-list and archive paths under `backup_archlinux/`.
@@ -93,6 +97,9 @@ the corresponding real workflow:
 ```bash
 # Arch/AUR update preview
 ./update_archlinux/update.sh
+
+# iWAN cluster-route preview
+./update_iwan_routes/update_iwan_routes
 
 # NAS sync preview
 nu sync_files/sync_files.nu all
@@ -149,6 +156,37 @@ bash backup_archlinux/backup.sh
 
 `backup_archlinux/restore.sh` is a root-only disaster-recovery pipeline. Review
 the complete script and payloads under `backup_archlinux/` before running it.
+It preserves replaced paths in timestamped safety directories. The temporary
+`yay` build directory is unique per run and is removed when that install step
+exits, including after a failure.
+
+### iWAN Cluster Routes
+
+The updater resolves the IPv4 addresses for the configured Hefei, Wuzhen,
+Taiyuan, and SCNet hosts. It replaces only the `/32` routes managed by the
+script and preserves other CIDRs already present in Panabit iWAN.
+
+```bash
+# Preview DNS and route changes
+./update_iwan_routes/update_iwan_routes
+
+# Apply after exiting Panabit iWAN from the Windows system tray
+./update_iwan_routes/update_iwan_routes --run
+
+# Show help
+./update_iwan_routes/update_iwan_routes --help
+```
+
+The script reads the current Windows user's configuration from
+`%APPDATA%\com.panabit\panabit_client\shared_preferences.json`. State and
+route-only backups are stored below `%LOCALAPPDATA%\update_iwan_routes`.
+No backup is created when the routes are unchanged, and backups are not removed
+automatically.
+
+This workflow targets the Panabit iWAN 2.1.3 settings format and requires
+custom-route mode. DNS, MTU, login data, and unrelated settings are not changed.
+If Panabit changes the internal format, the updater stops without writing;
+review it again after an iWAN upgrade.
 
 ### NAS Sync
 
@@ -158,7 +196,8 @@ nu sync_files/sync_files.nu <target|all> [--run]
 
 Configured targets are `dot_files`, `scripts`, `Code_Program`, `Simulation`,
 `Source_Code`, `Under_Graduate`, and `Matlab`. Without `--run`, rsync runs in
-preview mode. The script logs to `~/.cache/sync_files.log`.
+preview mode. Terminal status is also appended to
+`~/.cache/sync_files.log` for later sync review; this history is retained.
 
 Examples:
 
@@ -269,6 +308,9 @@ nu build_singularity_image/test_pic_images.nu smilei_spin
 
 The smoke inputs under `build_singularity_image/pic_test_inputs/` check startup,
 input parsing, executable linkage, MPI/HDF5 availability, and a short time loop.
+Successful smoke-test working directories are reported and removed. A failed
+test directory is reported and retained because its outputs may help diagnose
+the failure.
 
 ### PIC Runs
 
@@ -333,6 +375,7 @@ before running either command.
 ├── run_pic/                     # EPOCH/Smilei Apptainer runners
 ├── sync_files/                  # NAS/cluster rsync scripts and rule files
 ├── transfer_cluster_key/        # Real-only SSH key deployment
+├── update_iwan_routes/          # Panabit iWAN route preview/update
 └── update_archlinux/            # Dry-run-first Arch/AUR updates
 ```
 
@@ -340,6 +383,7 @@ before running either command.
 
 | Area | Edit here |
 | --- | --- |
+| iWAN managed host names | Top of `update_iwan_routes.ps1` |
 | NAS sources and destinations | Top of `sync_files/sync_files.nu` |
 | NAS exclusions | `sync_files/exclude_rules_nas_only` |
 | Cluster aliases and roots | Top of `sync_files/windows2cluster.nu` |
@@ -358,12 +402,16 @@ Use the narrowest syntax check for an edited file:
 nu --ide-check 100 path/to/script.nu
 bash -n path/to/script.sh
 python -m py_compile path/to/script.py
+
+ps1_path=$(wslpath -w path/to/script.ps1)
+powershell.exe -NoProfile -Command \
+  "\$p='$ps1_path'; \$tokens=\$null; \$errors=\$null; [void][System.Management.Automation.Language.Parser]::ParseFile(\$p,[ref]\$tokens,[ref]\$errors); if(\$errors.Count){\$errors; exit 1}"
 ```
 
 For sync, transfer, update, cleanup, and container changes, inspect help and
-command previews before any real execution. Do not use a real backup, restore,
-key transfer, Git push, package update, container build, or simulation run as a
-validation step.
+command previews before any real execution. Do not use a real iWAN write,
+backup, restore, key transfer, Git push, package update, container build, or
+simulation run as a validation step.
 
 ## Coding-Agent Guidance
 

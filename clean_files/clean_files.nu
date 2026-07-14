@@ -13,7 +13,7 @@ def path-has-protected-part [path: string] {
 
 # Treat research data, source, configs, and archives as protected files.
 def protected-extension? [path: string] {
-  let ext = ($path | path parse | get extension | str downcase)
+  let ext = ($path | path parse | get extension | str lowercase)
 
   $ext in [
     py sh nu c h cpp cxx cc hpp f f90 cu jl m
@@ -41,7 +41,7 @@ def protected-file? [path: string] {
 
 def junk-file? [path: string] {
   let base = ($path | path basename)
-  let ext = ($path | path parse | get extension | str downcase)
+  let ext = ($path | path parse | get extension | str lowercase)
 
   if ($base in [".DS_Store" "Thumbs.db"]) {
     return true

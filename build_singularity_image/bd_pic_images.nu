@@ -134,6 +134,9 @@ def main [
     field "Temporary dir" $temp_dir
     status "OK" "Archiving source code."
     tar -czf $tar_path -C $parent_dir $base_name
+    if $env.LAST_EXIT_CODE != 0 {
+      error make {msg: $"Source archive failed with code ($env.LAST_EXIT_CODE)"}
+    }
 
     render-template $template_path $temp_def (image-template-values $cfg $env_image)
     ensure-rendered $temp_def
@@ -141,6 +144,9 @@ def main [
     cd $temp_dir
     status "OK" $"Building image: ($image_path)"
     sudo -E $engine build --force $image_path ($temp_def | path basename)
+    if $env.LAST_EXIT_CODE != 0 {
+      error make {msg: $"Image build failed with code ($env.LAST_EXIT_CODE)"}
+    }
   } catch {|err|
     cd $start_dir
     clean-temp-dir $temp_dir

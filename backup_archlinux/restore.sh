@@ -255,11 +255,11 @@ export all_proxy="$SOCKS_URL"
 
 if ! command -v yay &>/dev/null; then
   echo "  -> Installing yay via proxy..."
-  rm -rf /tmp/yay  
-  git clone https://aur.archlinux.org/yay-bin.git /tmp/yay
-  cd /tmp/yay
+  YAY_TMP_DIR=\$(mktemp -d /tmp/yay.XXXXXX)
+  trap 'rm -rf "\$YAY_TMP_DIR"' EXIT
+  git clone https://aur.archlinux.org/yay-bin.git "\$YAY_TMP_DIR"
+  cd "\$YAY_TMP_DIR"
   makepkg -si --noconfirm
-  rm -rf /tmp/yay
 else
   echo "  -> yay is already installed."
 fi

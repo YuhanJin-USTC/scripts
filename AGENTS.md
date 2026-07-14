@@ -24,6 +24,7 @@ safer, and easier to repeat.
 Primary domains:
 
 - WSL and Arch Linux maintenance
+- Windows Panabit iWAN route maintenance
 - Windows, NAS, and cluster file movement
 - backup, restore, and local automation
 - SSH key and account workflow scripts
@@ -61,6 +62,7 @@ Everything in this repository exists to save research time.
 | Path | Purpose | Risk profile |
 | --- | --- | --- |
 | `update_archlinux/` | Arch/AUR updates | System packages |
+| `update_iwan_routes/` | Panabit iWAN cluster-route update | Windows app config |
 | `backup_archlinux/` | Backup and restore | System, secrets |
 | `sync_files/` | NAS and cluster transfer | External writes |
 | `transfer_cluster_key/` | SSH key deployment | Secret overwrite |
@@ -82,6 +84,8 @@ application project.
   `/mnt/c` and `/mnt/d` and NAS paths under `/mnt/y` and `/mnt/z`.
 - Shells: Bash and Nushell. Preserve the shell already used by each script.
 - Common tools: `rsync`, OpenSSH, Git, `tar`, `gpg`, and standard Linux tools.
+- iWAN route workflow: WSL, `wslpath`, Windows PowerShell, and Panabit iWAN
+  2.1.3 under the current Windows user.
 - Arch workflows: `pacman`, `yay`, and optionally `checkupdates` from
   `pacman-contrib`.
 - PIC workflows: `apptainer` or `singularity`; run scripts currently require
@@ -110,7 +114,7 @@ These rules override normal cleanup or refactor instincts.
   `sudo`, `gpg`, `pacman`, `yay`, restore operations, SSH key copying, forced
   Git sync, broad overwrite behavior, or real container builds.
 - Do not run real restore, backup, SSH key transfer, package update, Git push,
-  or container build commands just to validate code.
+  iWAN route write, or container build commands just to validate code.
 - Prefer dry runs, command previews, path inspection, syntax checks, and narrow
   validation before real sync, transfer, backup, restore, update, container,
   or deletion operations.
@@ -263,6 +267,7 @@ Current execution modes must be described accurately:
 | Workflow | Default invocation | Real execution |
 | --- | --- | --- |
 | Arch update | Preview | `--run` |
+| iWAN route update | Preview | Exit iWAN, then use `--run` |
 | NAS sync | Preview | `--run` |
 | Cluster upload/download | Preview | `--run` |
 | Junk cleanup | Preview | `--run`, then type `DELETE` |
@@ -279,6 +284,8 @@ this table together.
 ### Sync And Transfer
 
 - Preserve dry-run defaults and command previews.
+- Preserve the persistent NAS sync history at `~/.cache/sync_files.log`; it is
+  useful for later review and must not be removed automatically.
 - Do not add `--delete` or broad overwrite behavior without an explicit user
   request and a clear warning.
 - Preserve rsync trailing-slash semantics: these scripts intentionally transfer
@@ -288,6 +295,20 @@ this table together.
 - Treat exclude-rule files as part of the public behavior; inspect them whenever
   transfer selection changes.
 
+### iWAN Routes
+
+- Preserve preview-by-default behavior; only `--run` may change Panabit
+  settings.
+- Resolve only IPv4 A records from the DNS answer section and use `/32` routes.
+- Preserve non-managed routes and never change DNS, MTU, authentication, or
+  other Panabit settings.
+- Refuse writes while `mobile_client` is running or when the expected 2.1.3
+  routing structure is absent.
+- Keep route state and route-only backups under the current Windows user's
+  `%LOCALAPPDATA%`; never remove backups automatically.
+- Do not run a real route update for validation. Use help, syntax parsing, and
+  the default preview against the real configuration.
+
 ### Backup, Restore, Credentials, And Git
 
 - `backup.sh` writes package lists and archives, invokes GPG, and inspects Git.
@@ -295,6 +316,8 @@ this table together.
 - `restore.sh` is a root-only, system-changing pipeline with package installs,
   credential restore, stow operations, and forced Git synchronization. Never
   run it for testing.
+- Use unique temporary restore paths and remove them with exit cleanup on both
+  success and failure; do not remove timestamped safety backups automatically.
 - Keep SSH key material, GPG data, encrypted archives, and app credentials out
   of logs and tool output.
 - `tsf_clst_key.nu` and `git_update.nu` perform real overwrite or remote Git
@@ -314,6 +337,9 @@ this table together.
   stages.
 - Builds render definitions and source archives in temporary directories and
   may overwrite SIF images with `build --force`; never manually pre-delete SIFs.
+- Report and remove temporary build directories on both success and failure.
+  Remove successful smoke-test directories, but report and retain failed test
+  directories because their outputs may be useful for diagnosis.
 - Runners must create isolated timestamped result directories and preserve the
   input used for the run.
 - Do not launch a real image build, smoke test, or simulation merely to verify a
@@ -336,6 +362,7 @@ Use the narrowest applicable check:
 | --- | --- | --- |
 | `*.nu` | `nu --ide-check 100 <file>` | `--help` or documented dry run |
 | `*.sh` or Bash wrapper | `bash -n <file>` | `--help` or documented dry run |
+| `*.ps1` | Windows PowerShell parser | `--help` or documented dry run |
 | `*.py` | `python -m py_compile <file>` | `--help`; do not load models |
 | `*.def.tmpl` | Inspect placeholders/renderer | Build `--dry-run` |
 | PIC test input | Parser/static review | Existing test harness `--dry-run` |
@@ -416,6 +443,10 @@ guide.
 - `backup_archlinux/restore.sh`: root pipeline for configs, packages, user,
   credentials, stow, forced repo sync, and default shell.
 - `update_archlinux/update.sh`: dry-run-first Arch/AUR update; `--run` updates.
+- `update_iwan_routes/update_iwan_routes`: WSL launcher for the Windows
+  PowerShell iWAN route updater.
+- `update_iwan_routes/update_iwan_routes.ps1`: resolves managed cluster hosts,
+  previews route changes, and writes Panabit settings only with `--run`.
 - `sync_files/sync_files.nu`: dry-run-first selected NAS sync; `--run` syncs.
 - `sync_files/cluster2windows.nu`: dry-run-first filtered cluster download to a
   flat local destination; `--run` transfers.

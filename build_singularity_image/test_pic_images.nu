@@ -53,14 +53,15 @@ def main [
     let cfg = ($test_configs | get $target)
     let image = ($cfg.image | path expand)
     let input_dir = ($script_dir | path join $cfg.input_dir)
+
+    check-path $image $"($target) image"
+    check-path $input_dir $"($target) input directory"
+
     let run_dir = if $dry_run {
       $"/tmp/pic_test_($target)"
     } else {
       mktemp -d
     }
-
-    check-path $image $"($target) image"
-    check-path $input_dir $"($target) input directory"
 
     title "PIC image smoke test"
     field "Target" $target
@@ -76,9 +77,19 @@ def main [
     if $dry_run {
       status "DRY-RUN" "No smoke test will be run."
     } else {
-      # Copy smoke-test inputs into the isolated run directory.
-      cp -r (($input_dir | path join "*") | into glob) $run_dir
-      ^$engine exec --bind $"($run_dir):/work" $image sh -lc $shell_cmd
+      try {
+        # Copy smoke-test inputs into the isolated run directory.
+        cp -r (($input_dir | path join "*") | into glob) $run_dir
+        ^$engine exec --bind $"($run_dir):/work" $image sh -lc $shell_cmd
+        if $env.LAST_EXIT_CODE != 0 {
+          error make {msg: $"Smoke test failed with code ($env.LAST_EXIT_CODE)"}
+        }
+      } catch {|err|
+        status "ERROR" $"Failed smoke-test files kept for review: ($run_dir)"
+        error make {msg: $"Smoke test failed: ($err.msg)"}
+      }
+
+      clean-temp-dir $run_dir
       status "OK" $"Smoke test completed: ($target)"
     }
   }
