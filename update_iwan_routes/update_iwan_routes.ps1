@@ -317,7 +317,8 @@ function Replace-FileAtomic {
   try {
     Write-Utf8NoBom -Path $tempPath -Content $Content
     if (Test-Path -LiteralPath $Path -PathType Leaf) {
-      [System.IO.File]::Replace($tempPath, $Path, $null)
+      $nullPath = [System.Management.Automation.Language.NullString]::Value
+      [System.IO.File]::Replace($tempPath, $Path, $nullPath)
     } else {
       [System.IO.File]::Move($tempPath, $Path)
     }
