@@ -23,6 +23,7 @@ openssh
 python-black
 python-pip
 python-pylint
+python-yaml
 rclone
 reflector
 ripgrep

@@ -416,7 +416,8 @@ simulation run as a validation step.
 ## Coding-Agent Guidance
 
 Repository-wide instructions for coding agents live in [`AGENTS.md`](AGENTS.md).
-They define scope, safety boundaries, code conventions, subsystem contracts,
-validation, and completion criteria. Nested `AGENTS.md` files may be added later
-only when a subtree needs genuinely different instructions. The plural filename
-follows the [open AGENTS.md convention](https://agents.md/).
+They define common safety, code conventions, Worklog gating, validation, and
+completion criteria. The operational subtrees with distinct risk or behavior
+contracts carry a local `AGENTS.md`; those files inherit the root and contain
+only subsystem differences. The plural filename follows the
+[open AGENTS.md convention](https://agents.md/).
