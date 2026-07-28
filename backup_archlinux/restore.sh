@@ -5,8 +5,8 @@ set -o pipefail
 
 TARGET_USER="yuhanjin"
 TARGET_HOME="/home/$TARGET_USER"
-DOTFILES_REPO="https://github.com/YuhanJin-USTC/dot_files.git"
-SCRIPTS_REPO="https://github.com/YuhanJin-USTC/scripts.git"
+DOTFILES_REPO="git@github.com:YuhanJin-USTC/dot_files.git"
+SCRIPTS_REPO="git@github.com:YuhanJin-USTC/scripts.git"
 
 PROXY_URL="http://127.0.0.1:7890"
 SOCKS_URL="socks5://127.0.0.1:7890"
@@ -347,6 +347,7 @@ force_sync_repo() {
   else
     echo "  -> Syncing \$(basename "\$path") (Force Reset to Remote)..."
     cd "\$path"
+    git remote set-url origin "\$url"
     git fetch origin main
     git reset --hard origin/main
     git clean -fd

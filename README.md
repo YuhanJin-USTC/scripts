@@ -162,7 +162,10 @@ exits, including after a failure. Official-package installation performs a
 full system upgrade. If a Pacman package transaction fails, the restore
 retries once through Arch's official geo mirror with a pipe-backed alternate
 Pacman configuration. The retry does not modify the active mirror list or
-write a temporary configuration file.
+write a temporary configuration file. Repository recovery uses SSH URLs for
+both `dot_files` and `scripts`; an existing checkout has its `origin` changed
+to the configured SSH URL before forced synchronization. GitHub SSH
+authentication must therefore work before restore step `[9/9]`.
 
 ### iWAN Cluster Routes
 
