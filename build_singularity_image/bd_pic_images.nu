@@ -10,7 +10,7 @@ def main [
   # Target configuration.
   let target_configs = {
     epoch1d: {
-      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_Photon_Probe/epoch"
+      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch/epoch"
       env_image: "/home/yuhanjin/Code_Program/Env/Epoch/epoch_env.sif"
       work_dir: "/home/yuhanjin/Code_Program/Epoch/Epoch1d"
       image_name: "epoch_epoch1d.sif"
@@ -22,10 +22,10 @@ def main [
       exec_name: "epoch1d"
       epoch_dim: "epoch1d"
       epoch_compiler: "gfortran"
-      clean_items: "epoch2d epoch3d doc .git .github .gitignore License README.md"
+      clean_items: "epoch2d epoch3d doc .git .github .gitignore License README.md AGENTS.md"
     }
     epoch2d: {
-      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_Photon_Probe/epoch"
+      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch/epoch"
       env_image: "/home/yuhanjin/Code_Program/Env/Epoch/epoch_env.sif"
       work_dir: "/home/yuhanjin/Code_Program/Epoch/Epoch2d"
       image_name: "epoch_epoch2d.sif"
@@ -37,10 +37,10 @@ def main [
       exec_name: "epoch2d"
       epoch_dim: "epoch2d"
       epoch_compiler: "gfortran"
-      clean_items: "epoch1d epoch3d doc .git .github .gitignore License README.md"
+      clean_items: "epoch1d epoch3d doc .git .github .gitignore License README.md AGENTS.md"
     }
     epoch3d: {
-      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_Photon_Probe/epoch"
+      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch/epoch"
       env_image: "/home/yuhanjin/Code_Program/Env/Epoch/epoch_env.sif"
       work_dir: "/home/yuhanjin/Code_Program/Epoch/Epoch3d"
       image_name: "epoch_epoch3d.sif"
@@ -52,7 +52,7 @@ def main [
       exec_name: "epoch3d"
       epoch_dim: "epoch3d"
       epoch_compiler: "gfortran"
-      clean_items: "epoch1d epoch2d doc .git .github .gitignore License README.md"
+      clean_items: "epoch1d epoch2d doc .git .github .gitignore License README.md AGENTS.md"
     }
     smilei: {
       source_dir: "/home/yuhanjin/Source_Code/Smilei_2025/Smilei"
