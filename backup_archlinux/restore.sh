@@ -10,6 +10,7 @@ SCRIPTS_REPO="https://github.com/YuhanJin-USTC/scripts.git"
 
 PROXY_URL="http://127.0.0.1:7890"
 SOCKS_URL="socks5://127.0.0.1:7890"
+PACMAN_FALLBACK_MIRROR='Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch'
 RESTORE_STAMP=$(date +%Y%m%d_%H%M%S)
 RESTORE_BACKUP_DIR="/root/arch_restore_backup_$RESTORE_STAMP"
 
@@ -21,6 +22,7 @@ status_label() {
   case "$1" in
     OK) color 32 OK ;;
     SKIP) color 33 SKIP ;;
+    WARN) color 33 WARN ;;
     ERROR) color 31 ERROR ;;
     *) printf '%s' "$1" ;;
   esac
@@ -108,6 +110,52 @@ restore_sensitive_file() {
   echo "  -> Restored $target"
 }
 
+pacman_with_official_mirror() {
+  if ! grep -Eq '^[[:space:]]*Include[[:space:]]*=[[:space:]]*/etc/pacman\.d/mirrorlist[[:space:]]*$' /etc/pacman.conf; then
+    status ERROR "Cannot construct the official-mirror Pacman configuration."
+    return 1
+  fi
+
+  pacman --config <(
+    awk -v server="$PACMAN_FALLBACK_MIRROR" '
+      /^[[:space:]]*Include[[:space:]]*=[[:space:]]*\/etc\/pacman\.d\/mirrorlist[[:space:]]*$/ {
+        print server
+        next
+      }
+      { print }
+    ' /etc/pacman.conf
+  ) "$@"
+}
+
+update_keyring_with_retry() {
+  if pacman -Sy --needed --noconfirm archlinux-keyring; then
+    return
+  fi
+
+  status WARN "Keyring update failed; retrying once through the official Arch geo mirror."
+  pacman_with_official_mirror -Syy --needed --noconfirm archlinux-keyring
+}
+
+pacman_upgrade_and_install() {
+  if pacman -Syu --needed --noconfirm "$@"; then
+    return
+  fi
+
+  status WARN "Package transaction failed; retrying once through the official Arch geo mirror."
+  pacman_with_official_mirror -Syyu --needed --noconfirm "$@"
+}
+
+pacman_install_list() {
+  local package_file=$1
+
+  if pacman -S --needed --noconfirm - <"$package_file"; then
+    return
+  fi
+
+  status WARN "Package-list transaction failed; retrying once through the official Arch geo mirror."
+  pacman_with_official_mirror -Syyu --needed --noconfirm - <"$package_file"
+}
+
 if [ "$EUID" -ne 0 ]; then
   status ERROR "This restore pipeline MUST be executed as root."
   exit 1
@@ -153,9 +201,8 @@ if [ ! -d "/etc/pacman.d/gnupg" ]; then
 else
   echo "  -> Pacman keyring already exists. Skipping initialization."
 fi
-pacman -Sy --noconfirm archlinux-keyring
-pacman -Su --noconfirm
-pacman -S --needed --noconfirm base-devel git stow sudo wget tar openssh gnupg
+update_keyring_with_retry
+pacman_upgrade_and_install base-devel git stow sudo wget tar openssh gnupg
 
 echo "[3/9] Setup target user ($TARGET_USER) and privileges..."
 if ! id "$TARGET_USER" &>/dev/null; then
@@ -241,7 +288,7 @@ fi
 echo "[6/9] Install pkgs from pacman..."
 PKG_LIST_DIR="$BACKUP_ROOT/pkg-lists"
 if [ -f "$PKG_LIST_DIR/pkglist-pacman.txt" ]; then
-  pacman -S --needed --noconfirm - <"$PKG_LIST_DIR/pkglist-pacman.txt"
+  pacman_install_list "$PKG_LIST_DIR/pkglist-pacman.txt"
 else
   echo "  -> Error: pkglist-pacman.txt not found."
 fi

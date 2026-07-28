@@ -158,7 +158,11 @@ bash backup_archlinux/backup.sh
 the complete script and payloads under `backup_archlinux/` before running it.
 It preserves replaced paths in timestamped safety directories. The temporary
 `yay` build directory is unique per run and is removed when that install step
-exits, including after a failure.
+exits, including after a failure. Official-package installation performs a
+full system upgrade. If a Pacman package transaction fails, the restore
+retries once through Arch's official geo mirror with a pipe-backed alternate
+Pacman configuration. The retry does not modify the active mirror list or
+write a temporary configuration file.
 
 ### iWAN Cluster Routes
 
