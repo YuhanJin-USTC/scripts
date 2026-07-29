@@ -75,20 +75,37 @@ if grep -q "^topiary$" "$PKG_LIST_DIR/pkglist-aur.txt"; then
   status OK "Replaced 'topiary' with 'topiary-bin' to avoid slow compilation."
 fi
 
-step "3/7" "Archive sensitive credentials"
+step "3/7" "Archive sensitive credentials and global Git configuration"
 SENSITIVE_PATHS=()
 [ -d "$HOME/.ssh" ] && SENSITIVE_PATHS+=(".ssh")
 [ -d "$HOME/.gnupg" ] && SENSITIVE_PATHS+=(".gnupg")
 [ -f "$HOME/.config/rclone/rclone.conf" ] && SENSITIVE_PATHS+=(".config/rclone/rclone.conf")
 [ -f "$HOME/.codex/.env" ] && SENSITIVE_PATHS+=(".codex/.env")
 
-if [ ${#SENSITIVE_PATHS[@]} -gt 0 ]; then
-  tar --exclude=".ssh/config" -czf - -C "$HOME" "${SENSITIVE_PATHS[@]}" |
+GIT_CONFIG_SOURCE=""
+if [ -f "$HOME/.gitconfig" ]; then
+  GIT_CONFIG_SOURCE=$(readlink -f "$HOME/.gitconfig")
+  if [ "$(basename "$GIT_CONFIG_SOURCE")" != ".gitconfig" ]; then
+    status ERROR "Resolved global Git config must be named .gitconfig."
+    exit 1
+  fi
+fi
+
+if [ ${#SENSITIVE_PATHS[@]} -gt 0 ] || [ -n "$GIT_CONFIG_SOURCE" ]; then
+  ARCHIVE_PATHS=()
+  if [ ${#SENSITIVE_PATHS[@]} -gt 0 ]; then
+    ARCHIVE_PATHS+=(-C "$HOME" "${SENSITIVE_PATHS[@]}")
+  fi
+  if [ -n "$GIT_CONFIG_SOURCE" ]; then
+    ARCHIVE_PATHS+=(-C "$(dirname "$GIT_CONFIG_SOURCE")" ".gitconfig")
+  fi
+
+  tar --exclude=".ssh/config" -czf - "${ARCHIVE_PATHS[@]}" |
     gpg --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 --output "$DATA_DIR/secure_data.tar.gz.gpg"
-  status OK "Credentials archived to $DATA_DIR/secure_data.tar.gz.gpg"
+  status OK "Credentials and global Git config archived to $DATA_DIR/secure_data.tar.gz.gpg"
   status SKIP "SSH config excluded; restore it from dot_files/stow."
 else
-  status SKIP "No credentials found to archive."
+  status SKIP "No credentials or global Git config found to archive."
 fi
 
 step "4/7" "Archive home shell configuration files"

@@ -147,8 +147,10 @@ Perform the real update only after reviewing the preview:
 ```
 
 The backup workflow has no dry-run mode. It records package lists, creates
-selected configuration archives, encrypts credential data with GPG, and checks
-the Git state of core directories:
+selected configuration archives, encrypts credential data and the resolved
+global `.gitconfig` with GPG, and checks the Git state of core directories.
+The SSH config remains owned by `dot_files`/Stow and is not duplicated in the
+credential archive:
 
 ```bash
 bash backup_archlinux/backup.sh
@@ -164,8 +166,17 @@ retries once through Arch's official geo mirror with a pipe-backed alternate
 Pacman configuration. The retry does not modify the active mirror list or
 write a temporary configuration file. Repository recovery uses SSH URLs for
 both `dot_files` and `scripts`; an existing checkout has its `origin` changed
-to the configured SSH URL before forced synchronization. GitHub SSH
-authentication must therefore work before restore step `[9/9]`.
+to the configured SSH URL before forced synchronization. Restore step `[9/9]`
+bootstraps both repositories with the encrypted-backup copy of `id_github` and
+`ssh -F /dev/null`, so it does not depend on the system SSH configuration or
+write a temporary SSH config. After cloning `dot_files`, restore ensures the
+global Git setting `core.sshCommand = ssh -F ~/.ssh/config` and deploys the
+Stow-owned SSH config. New repositories then use the configured GitHub key
+without repository-local `core.sshCommand` entries. The corresponding public
+key must already be registered with the GitHub account. Stow runs with
+`--no-folding`, so application configuration directories remain real local
+directories containing per-file links; runtime files such as Nushell
+`history.txt` therefore stay outside `dot_files`.
 
 ### iWAN Cluster Routes
 

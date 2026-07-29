@@ -7,6 +7,7 @@ TARGET_USER="yuhanjin"
 TARGET_HOME="/home/$TARGET_USER"
 DOTFILES_REPO="git@github.com:YuhanJin-USTC/dot_files.git"
 SCRIPTS_REPO="git@github.com:YuhanJin-USTC/scripts.git"
+GITHUB_SSH_KEY="$TARGET_HOME/.ssh/id_github"
 
 PROXY_URL="http://127.0.0.1:7890"
 SOCKS_URL="socks5://127.0.0.1:7890"
@@ -274,10 +275,12 @@ if [ -f "$BACKUP_ROOT/data/secure_data.tar.gz.gpg" ]; then
       -xzf "$SECURE_TAR_TMP" -C "$TARGET_HOME/"
 
     chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.ssh" "$TARGET_HOME/.gnupg" 2>/dev/null || true
+    chown "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.gitconfig" 2>/dev/null || true
     chmod 700 "$TARGET_HOME/.ssh" "$TARGET_HOME/.gnupg" 2>/dev/null || true
     find "$TARGET_HOME/.ssh" -type f -exec chmod 600 {} \; 2>/dev/null || true
     find "$TARGET_HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} \; 2>/dev/null || true
-    echo "  -> SSH/GPG restored; SSH config left for dot_files/stow."
+    chmod 600 "$TARGET_HOME/.gitconfig" 2>/dev/null || true
+    echo "  -> SSH/GPG and global Git config restored; SSH config left for dot_files/stow."
   else
     echo "  -> Error: Decryption failed. Skipping Step [5/9]."
   fi
@@ -331,11 +334,17 @@ else
 fi
 
 echo "[9/9] Clone and stow dotfiles..."
+if [ ! -r "$GITHUB_SSH_KEY" ]; then
+  status ERROR "GitHub SSH key was not restored at $GITHUB_SSH_KEY."
+  exit 1
+fi
+
 su -s /bin/bash "$TARGET_USER" <<EOF
 set -e
 export http_proxy="$PROXY_URL"
 export https_proxy="$PROXY_URL"
 export all_proxy="$SOCKS_URL"
+export GIT_SSH_COMMAND="ssh -F /dev/null -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
 
 # Force remote state for restored repos.
 force_sync_repo() {
@@ -356,16 +365,21 @@ force_sync_repo() {
 
 force_sync_repo "$DOTFILES_REPO" "$TARGET_HOME/dot_files"
 
+git config --file "$TARGET_HOME/dot_files/git/.gitconfig" \
+  core.sshCommand 'ssh -F ~/.ssh/config'
+
 echo "  -> Executing stow configuration..."
-# Keep SSH config owned by dot_files/stow.
-SSH_CONFIG_PATH="$TARGET_HOME/.ssh/config"
 USER_BACKUP_DIR="$TARGET_HOME/restore_backup_$RESTORE_STAMP"
-if [ -e "\$SSH_CONFIG_PATH" ] || [ -L "\$SSH_CONFIG_PATH" ]; then
-  backup_target="\$USER_BACKUP_DIR/.ssh/config"
-  mkdir -p "\$(dirname "\$backup_target")"
-  mv "\$SSH_CONFIG_PATH" "\$backup_target"
-  echo "  -> Existing SSH config moved to \$backup_target"
-fi
+# Keep global Git and SSH configs owned by dot_files/stow.
+for stow_path in .gitconfig .ssh/config; do
+  target="$TARGET_HOME/\$stow_path"
+  if [ -e "\$target" ] || [ -L "\$target" ]; then
+    backup_target="\$USER_BACKUP_DIR/\$stow_path"
+    mkdir -p "\$(dirname "\$backup_target")"
+    mv "\$target" "\$backup_target"
+    echo "  -> Existing \$target moved to \$backup_target"
+  fi
+done
 
 cd "$TARGET_HOME/dot_files" || exit
 for target_dir in */; do
@@ -373,7 +387,7 @@ for target_dir in */; do
   if [[ "\$dir_name" == ".git" ]]; then
     continue
   fi
-  stow --restow -t "$TARGET_HOME" "\$dir_name"
+  stow --no-folding --restow -t "$TARGET_HOME" "\$dir_name"
 done
 
 force_sync_repo "$SCRIPTS_REPO" "$TARGET_HOME/scripts"
