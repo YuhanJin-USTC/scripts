@@ -19,8 +19,8 @@ def field [name: string value: string] {
 }
 
 def main [] {
-  let src_dir = ("/mnt/d/Download/Edge" | path expand)
-  let win_ssh_dest = "/mnt/c/Users/17865/.ssh"
+  let src_dir = ("/mnt/d/download/edge" | path expand)
+  let win_ssh_dest = "/mnt/c/Users/jinyuhan/.ssh"
   let wsl_ssh_dest = ("~/.ssh" | path expand)
 
   print ""
