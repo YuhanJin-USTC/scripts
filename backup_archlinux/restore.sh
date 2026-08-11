@@ -233,12 +233,16 @@ if [[ "$BACKUP_ROOT" != "$TARGET_HOME"* ]]; then
   BACKUP_ROOT="$TARGET_BACKUP_ROOT"
 fi
 
-echo "[-] Restore home shell configurations..."
+echo "[-] Restore home configurations..."
 if [ -f "$BACKUP_ROOT/data/home_config.tar.gz" ]; then
   backup_existing_from_tar "$BACKUP_ROOT/data/home_config.tar.gz" "$TARGET_HOME"
   tar -xzf "$BACKUP_ROOT/data/home_config.tar.gz" -C "$TARGET_HOME"
-  chown "$TARGET_USER:$TARGET_USER" "$TARGET_HOME"/.bash* 2>/dev/null || true
-  echo "  -> Home shell configs restored."
+  for path in .bashrc .bash_profile .bash_logout AGENTS.md; do
+    if [ -e "$TARGET_HOME/$path" ] || [ -L "$TARGET_HOME/$path" ]; then
+      chown -h "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/$path"
+    fi
+  done
+  echo "  -> Home configs restored."
 else
   echo "  -> Notice: home_config.tar.gz not found. Skipping."
 fi

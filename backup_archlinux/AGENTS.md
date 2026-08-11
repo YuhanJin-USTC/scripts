@@ -11,6 +11,8 @@ repository-root instructions. Changes confined here use
 - `backup.sh` is a real operation: it rewrites package lists and archives,
   handles credentials through GPG, records the default shell, and inspects Git
   state. Never run it as a harmless check.
+- Keep the home configuration archive and restore path aligned. It includes the
+  home-level `/home/yuhanjin/AGENTS.md` when that file exists.
 - `restore.sh` is a root-only disaster-recovery pipeline. It restores system
   and home configuration, installs packages, restores credentials, creates or
   changes users, runs Stow, and force-synchronizes configured repositories.

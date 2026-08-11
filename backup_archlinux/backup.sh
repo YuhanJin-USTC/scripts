@@ -108,9 +108,9 @@ else
   status SKIP "No credentials or global Git config found to archive."
 fi
 
-step "4/7" "Archive home shell configuration files"
+step "4/7" "Archive home configuration files"
 HOME_CONFIGS=()
-for path in .bashrc .bash_profile .bash_logout; do
+for path in .bashrc .bash_profile .bash_logout AGENTS.md; do
   [ -e "$HOME/$path" ] && HOME_CONFIGS+=("$path")
 done
 
@@ -118,7 +118,7 @@ if [ ${#HOME_CONFIGS[@]} -gt 0 ]; then
   tar -czf "$DATA_DIR/home_config.tar.gz" -C "$HOME" "${HOME_CONFIGS[@]}"
   status OK "Home configs archived to $DATA_DIR/home_config.tar.gz"
 else
-  status SKIP "No home shell configs found to archive."
+  status SKIP "No home configs found to archive."
 fi
 
 step "5/7" "Archive system configuration files"

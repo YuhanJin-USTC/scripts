@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # EPOCH 1D container.
-SIF_PATH="/home/yuhanjin/Code_Program/Epoch/Epoch1d/epoch_epoch1d.sif"
+SIF_PATH="/home/yuhanjin/Code_Program/Epoch/Epoch1d/epoch_epoch1d_qed_work.sif"
 EPOCH_EXE="epoch1d"
 
 color() {
