@@ -15,8 +15,9 @@ repository-root instructions. Changes confined here use
 - Replace only routes previously owned by this workflow. Preserve unrelated
   custom routes, route order stability where possible, DNS, MTU,
   authentication, and every other Panabit setting.
-- Require custom-route mode and the expected Panabit iWAN 2.1.3 routing
-  structure. Fail closed if the structure is absent or ambiguous.
+- Require custom-route mode before any write and the expected Panabit iWAN
+  2.1.3 routing structure in all modes. Preview may run in another routing
+  mode. Fail closed if the structure is absent or ambiguous.
 - Refuse writes while `mobile_client` is running. Keep route-only backups and
   managed state below the current Windows user's `%LOCALAPPDATA%`; never remove
   backups automatically.

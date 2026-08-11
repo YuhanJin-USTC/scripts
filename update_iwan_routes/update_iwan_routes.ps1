@@ -65,7 +65,7 @@ Options:
 
 # Stable deduplication.
 function Get-UniqueList {
-  param([Parameter(Mandatory = $true)][object[]]$Items)
+  param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Items)
 
   $seen = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
   $result = New-Object "System.Collections.Generic.List[string]"
@@ -126,8 +126,8 @@ function Read-IwanConfig {
 
   $modeProperty = $routing.PSObject.Properties["mode"]
   $routesProperty = $routing.PSObject.Properties["custom_routes"]
-  if ($null -eq $modeProperty -or $modeProperty.Value -ne "custom") {
-    throw "iWAN is not using custom routes. Select '按网段路由' first."
+  if ($null -eq $modeProperty -or -not ($modeProperty.Value -is [string])) {
+    throw "iWAN routing mode not found."
   }
   if ($null -eq $routesProperty -or -not ($routesProperty.Value -is [string])) {
     throw "iWAN custom_routes setting not found."
@@ -141,6 +141,7 @@ function Read-IwanConfig {
 
   return [pscustomobject]@{
     Content = $content
+    Mode = [string]$modeProperty.Value
     RouteText = [string]$routesProperty.Value
     Routes = @(ConvertTo-RouteList -RouteText ([string]$routesProperty.Value))
   }
@@ -238,9 +239,9 @@ function Resolve-ManagedRoutes {
 # Preserve extra routes.
 function Merge-Routes {
   param(
-    [Parameter(Mandatory = $true)][object[]]$CurrentRoutes,
-    [Parameter(Mandatory = $true)][object[]]$OldManagedRoutes,
-    [Parameter(Mandatory = $true)][object[]]$NewManagedRoutes
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$CurrentRoutes,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$OldManagedRoutes,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$NewManagedRoutes
   )
 
   $oldSet = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
@@ -264,8 +265,8 @@ function Merge-Routes {
 # Route diff.
 function Get-ChangedRoutes {
   param(
-    [Parameter(Mandatory = $true)][object[]]$Left,
-    [Parameter(Mandatory = $true)][object[]]$Right
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Left,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Right
   )
 
   $rightSet = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
@@ -333,9 +334,9 @@ function Replace-FileAtomic {
 function Write-RouteBackup {
   param(
     [Parameter(Mandatory = $true)][string]$Directory,
-    [Parameter(Mandatory = $true)][string]$CurrentRouteText,
-    [Parameter(Mandatory = $true)][object[]]$OldManagedRoutes,
-    [Parameter(Mandatory = $true)][object[]]$NewManagedRoutes
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$CurrentRouteText,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$OldManagedRoutes,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$NewManagedRoutes
   )
 
   [void][System.IO.Directory]::CreateDirectory($Directory)
@@ -404,6 +405,10 @@ function Invoke-Main {
   }
 
   $config = Read-IwanConfig -Path $configPath
+  if ($mode -eq "run" -and $config.Mode -ne "custom") {
+    throw "iWAN routing mode is '$($config.Mode)'. Select custom-route mode in iWAN before using --run."
+  }
+
   $state = Read-ManagedState -Path $statePath
   $resolved = Resolve-ManagedRoutes
   $newRoutes = @(Merge-Routes -CurrentRoutes $config.Routes -OldManagedRoutes $state.Routes -NewManagedRoutes $resolved.Routes)
@@ -420,9 +425,14 @@ function Invoke-Main {
   Write-Host "iWAN route update" -ForegroundColor Cyan
   Write-Host "Target: $configPath"
   Write-Host "Mode: $mode"
+  Write-Host "iWAN mode: $($config.Mode)"
   Write-Host "Rule: managed IPv4 /32; preserve other routes"
   if ($mode -eq "dry-run") {
-    Write-Status -Label "DRY-RUN" -Message "No iWAN settings will be changed."
+    if ($config.Mode -eq "custom") {
+      Write-Status -Label "DRY-RUN" -Message "No iWAN settings will be changed."
+    } else {
+      Write-Status -Label "DRY-RUN" -Message "Preview only. Select custom-route mode in iWAN before using --run."
+    }
   }
   Write-Host ""
 
@@ -442,7 +452,11 @@ function Invoke-Main {
   }
 
   if ($mode -eq "dry-run") {
-    Write-Status -Label "OK" -Message "Dry run completed. Add --run to update iWAN."
+    if ($config.Mode -eq "custom") {
+      Write-Status -Label "OK" -Message "Dry run completed. Add --run to update iWAN."
+    } else {
+      Write-Status -Label "OK" -Message "Dry run completed. Select custom-route mode before using --run."
+    }
     return
   }
 
@@ -459,7 +473,7 @@ function Invoke-Main {
     $configWritten = $true
 
     $verified = Read-IwanConfig -Path $configPath
-    if ($verified.RouteText -ne $newRouteText) {
+    if ($verified.Mode -ne "custom" -or $verified.RouteText -ne $newRouteText) {
       throw "Updated route verification failed."
     }
 

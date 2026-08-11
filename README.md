@@ -202,10 +202,11 @@ route-only backups are stored below `%LOCALAPPDATA%\update_iwan_routes`.
 No backup is created when the routes are unchanged, and backups are not removed
 automatically.
 
-This workflow targets the Panabit iWAN 2.1.3 settings format and requires
-custom-route mode. DNS, MTU, login data, and unrelated settings are not changed.
-If Panabit changes the internal format, the updater stops without writing;
-review it again after an iWAN upgrade.
+This workflow targets the Panabit iWAN 2.1.3 settings format. Preview mode may
+run in another routing mode, but `--run` requires custom-route mode. DNS, MTU,
+login data, and unrelated settings are not changed. If Panabit changes the
+internal format, the updater stops without writing; review it again after an
+iWAN upgrade.
 
 ### NAS Sync
 
