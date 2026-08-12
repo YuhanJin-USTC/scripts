@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -e
-
-exec nu /home/yuhanjin/scripts/clean_files/clean_files.nu "$@"

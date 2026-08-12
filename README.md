@@ -1,22 +1,22 @@
 # scripts
 
-Personal research-automation toolkit for laser-plasma theory and simulation
-workflows. It covers Arch Linux on WSL, Windows/NAS/cluster file movement,
-backup and restore, PIC container builds and runs, and GPU subtitle processing.
+Personal research-automation toolkit for laser-plasma theory, PIC simulation,
+data movement, workstation maintenance, and local media processing.
 
-This is a script-first personal repository, not a portable software package.
-The explicit paths, cluster aliases, image names, job counts, and target records
-near the top of each script are intentional: they keep daily research workflows
-easy to inspect and edit.
+This is a script-first repository, not a portable software package. Intentional
+external paths, cluster aliases, image names, target records, and job counts
+remain explicit so daily research workflows are easy to inspect and edit.
 
-## Design Goals
+## Design
 
-- Save time on repeated research and workstation tasks.
-- Keep commands transparent and manually editable.
-- Preview external changes where the current interface supports it.
+- Keep the locked workflow domains small and explicit, with independent PIC
+  build, post-processing build, runtime, sync, and maintenance boundaries.
+- Keep public flags, safety defaults, outputs, and configured research paths
+  visible.
+- Preview external changes where the workflow supports it.
 - Protect credentials, backup payloads, source trees, simulation data, and
   reproducibility.
-- Keep EPOCH, Smilei, and Smilei-Spin build/run configuration explicit.
+- Keep PIC image builds, post-processing image builds, and PIC runs separate.
 
 ## Environment
 
@@ -28,416 +28,196 @@ The configured environment is:
 - NAS mounts: `/mnt/y` and `/mnt/z/金虞焓`.
 - SSH aliases: `hfcluster`, `tycluster`, and `wzcluster`.
 
-There is no global installer or repository-wide dependency command. Install only
-the tools required by the workflow you use.
+There is no repository-wide installer or dependency command. Install only the
+tools required by the workflow being used.
 
-| Workflow | Required tools or resources |
+| Domain | Required tools or resources |
 | --- | --- |
 | Core scripts | Bash, Nushell, standard Linux utilities |
-| iWAN route update | WSL, `powershell.exe`, `wslpath`, Panabit iWAN 2.1.3 |
-| NAS/cluster transfer | `rsync`, OpenSSH, configured mounts/SSH aliases |
-| Arch maintenance | `pacman`, `yay`; `checkupdates` is optional |
-| Backup/restore | `tar`, `gpg`, Git, `stow`, Arch package tools |
-| PIC image build | Container engine, `sudo`, source/image paths |
-| PIC run | `apptainer` and the configured SIF image |
-| ASR/MT | `singularity`, NVIDIA GPU access in WSL, local ASR/MT images |
-| Subtitle burn-in | `ffmpeg` in addition to the ASR/MT requirements |
-
-The Python helpers are designed to run inside their corresponding containers;
-their packages are not managed as a host-side Python environment.
-
-## Before First Use
-
-1. Place the repository at `/home/yuhanjin/scripts`, or update every intentional
-   absolute reference before running anything.
-2. Review the editable variables at the top of the relevant script.
-3. Confirm required Windows/NAS mounts, SSH aliases, source trees, and SIF images.
-4. Read `--help` and use the documented preview mode when one exists.
-5. Inspect every real-only workflow before execution.
+| Container builds | Apptainer or Singularity, `sudo`, configured source and image paths |
+| PIC runs | Apptainer and the configured SIF images |
+| NAS and cluster transfer | `rsync`, OpenSSH, configured mounts and SSH aliases |
+| Arch backup and restore | `tar`, GPG, Git, Stow, Arch package tools |
+| iWAN routes | WSL, `powershell.exe`, `wslpath`, Panabit iWAN 2.1.3 |
+| ASR and translation | Singularity, NVIDIA GPU access in WSL, local model images |
+| Subtitle burn-in | FFmpeg in addition to the ASR requirements |
 
 ## Safety Model
 
-The scripts do not all share the same default mode. Check this table before
-running a command:
+The scripts do not share one execution default. Check the mode before running
+any command.
 
 | Workflow | Default | Real action |
 | --- | --- | --- |
-| `update_archlinux/update.sh` | Preview | Add `--run` |
-| `update_iwan_routes/update_iwan_routes` | Preview | Exit iWAN, then add `--run` |
-| `sync_files/sync_files.nu` | Preview | Add `--run` |
-| `sync_files/windows2cluster.nu` | Preview | Add `--run` |
-| `sync_files/cluster2windows.nu` | Preview | Add `--run` |
-| `clean_files/clean_files.nu` | Preview | Add `--run`, then type `DELETE` |
-| PIC image build scripts | **Real build** | Add `--dry-run` to preview |
-| PIC smoke-test script | **Real test** | Add `--dry-run` to preview |
-| Backup/restore, key/Git sync, PIC run, ASR/MT | **Real** | No dry run |
+| `update/update_archlinux.sh` | Preview | Add `--run` |
+| `update/update_iwan_routes.sh` | Preview | Exit iWAN, then add `--run` |
+| `sync/sync_files.nu` | Preview | Add `--run` |
+| `sync/windows2cluster.nu` | Preview | Add `--run` |
+| `sync/cluster2windows.nu` | Preview | Add `--run` |
+| `clean/clean_files.nu` | Preview | Add `--run`, then type `DELETE` |
+| Container image builders | **Real build** | Add `--dry-run` to preview |
+| PIC image smoke tests | **Real test** | Add `--dry-run` to preview |
+| Backup, restore, key transfer, Git update, PIC run, ASR/MT | **Real** | No dry run |
+
+A preview can still read external state. NAS and cluster rsync previews, iWAN
+configuration reads, and DNS lookups require an explicitly scoped request and
+available external paths or services. Do not use a real update, transfer,
+backup, restore, key deployment, Git mutation, container build, PIC run, or
+media pipeline merely to validate source changes.
 
 Important boundaries:
 
 - Sync scripts do not use `rsync --delete`.
-- iWAN route updates modify Panabit settings only after `--run`, and refuse to
-  write while the client is running.
-- Cluster upload excludes common large output formats unless `--all-files` is
-  supplied.
-- Backup writes fixed package-list and archive paths under `backup_archlinux/`.
-- Restore changes the system, installs packages, restores credentials, and
-  force-synchronizes configured Git repositories. It must be reviewed and run
-  as root only when a full restore is intended.
-- SSH key sync uses forced copies to fixed WSL and Windows key paths.
-- Git sync can initialize a repository, stage all changes, commit, rename the
-  branch to `main`, and push.
-- PIC builds use `build --force` and can replace an existing SIF image.
-- Subtitle burn-in uses FFmpeg overwrite mode for the generated output name.
-
-## Quick Start
-
-These commands inspect help or preview behavior without intentionally performing
-the corresponding real workflow:
-
-```bash
-# Arch/AUR update preview
-./update_archlinux/update.sh
-
-# iWAN cluster-route preview
-./update_iwan_routes/update_iwan_routes
-
-# NAS sync preview
-nu sync_files/sync_files.nu all
-
-# Cluster upload preview
-nu sync_files/windows2cluster.nu hfcluster /path/to/case Simulation/case
-
-# Cluster download preview
-nu sync_files/cluster2windows.nu hfcluster /remote/path /local/path bz .sdf
-
-# Junk cleanup preview
-./clean_files/clean_files /path/to/project
-
-# PIC program-image build preview
-nu build_singularity_image/bd_pic_images.nu smilei --dry-run
-
-# PIC image smoke-test preview
-nu build_singularity_image/test_pic_images.nu all --dry-run
-
-# Real-only workflow help
-bash backup_archlinux/backup.sh --help
-./backup_archlinux/restore.sh --help
-./run_pic/smilei_run.sh --help
-```
-
-Container previews still validate configured executables and paths, so they can
-fail safely when the local PIC environment has not been prepared.
-
-## Usage Reference
-
-Run all examples from the repository root unless noted otherwise.
-
-### Arch Linux WSL
-
-Preview official-repository and AUR updates:
-
-```bash
-./update_archlinux/update.sh
-```
-
-Perform the real update only after reviewing the preview:
-
-```bash
-./update_archlinux/update.sh --run
-```
-
-The backup workflow has no dry-run mode. It records package lists, creates
-selected configuration archives, including `/home/yuhanjin/AGENTS.md` when it
-exists, encrypts credential data and the resolved global `.gitconfig` with GPG,
-and checks the Git state of core directories. The SSH config remains owned by
-`dot_files`/Stow and is not duplicated in the credential archive:
-
-```bash
-bash backup_archlinux/backup.sh
-```
-
-`backup_archlinux/restore.sh` is a root-only disaster-recovery pipeline. Review
-the complete script and payloads under `backup_archlinux/` before running it.
-It restores the archived home-level `AGENTS.md` and preserves replaced paths in
-timestamped safety directories. The temporary `yay` build directory is unique
-per run and is removed when that install step exits, including after a failure.
-Official-package installation performs a full system upgrade. If a Pacman
-package transaction fails, the restore retries once through Arch's official geo
-mirror with a pipe-backed alternate Pacman configuration. The retry does not
-modify the active mirror list or write a temporary configuration file.
-Repository recovery uses SSH URLs for both `dot_files` and `scripts`; an
-existing checkout has its `origin` changed to the configured SSH URL before
-forced synchronization. Restore step `[9/9]` bootstraps both repositories with
-the encrypted-backup copy of `id_github` and `ssh -F /dev/null`, so it does not
-depend on the system SSH configuration or write a temporary SSH config. After
-cloning `dot_files`, restore ensures the global Git setting
-`core.sshCommand = ssh -F ~/.ssh/config` and deploys the Stow-owned SSH config.
-New repositories then use the configured GitHub key without repository-local
-`core.sshCommand` entries. The corresponding public key must already be
-registered with the GitHub account. Stow runs with `--no-folding`, so
-application configuration directories remain real local directories containing
-per-file links; runtime files such as Nushell `history.txt` therefore stay
-outside `dot_files`.
-
-### iWAN Cluster Routes
-
-The updater resolves the IPv4 addresses for the configured Hefei, Wuzhen,
-Taiyuan, and SCNet hosts. It replaces only the `/32` routes managed by the
-script and preserves other CIDRs already present in Panabit iWAN.
-
-```bash
-# Preview DNS and route changes
-./update_iwan_routes/update_iwan_routes
-
-# Apply after exiting Panabit iWAN from the Windows system tray
-./update_iwan_routes/update_iwan_routes --run
-
-# Show help
-./update_iwan_routes/update_iwan_routes --help
-```
-
-The script reads the current Windows user's configuration from
-`%APPDATA%\com.panabit\panabit_client\shared_preferences.json`. State and
-route-only backups are stored below `%LOCALAPPDATA%\update_iwan_routes`.
-No backup is created when the routes are unchanged, and backups are not removed
-automatically.
-
-This workflow targets the Panabit iWAN 2.1.3 settings format. Preview mode may
-run in another routing mode, but `--run` requires custom-route mode. DNS, MTU,
-login data, and unrelated settings are not changed. If Panabit changes the
-internal format, the updater stops without writing; review it again after an
-iWAN upgrade.
-
-### NAS Sync
-
-```bash
-nu sync_files/sync_files.nu <target|all> [--run]
-```
-
-Configured targets are `dot_files`, `scripts`, `Code_Program`, `Simulation`,
-`Source_Code`, `Under_Graduate`, and `Matlab`. Without `--run`, rsync runs in
-preview mode. Terminal status is also appended to
-`~/.cache/sync_files.log` for later sync review; this history is retained.
-
-Examples:
-
-```bash
-# Preview one target
-nu sync_files/sync_files.nu Simulation
-
-# Run all configured syncs
-nu sync_files/sync_files.nu all --run
-```
-
-NAS exclusion rules live in `sync_files/exclude_rules_nas_only`.
-
-### Cluster Upload
-
-```bash
-nu sync_files/windows2cluster.nu \
-  <hfcluster|tycluster|wzcluster> \
-  <local_directory> \
-  <remote_directory> \
-  [--run] [--all-files]
-```
-
-A relative remote directory is resolved below the selected cluster's configured
-root. An absolute remote directory is used unchanged. The default rule file is
-`sync_files/exclude_rules_cluster_upload`; `--all-files` bypasses it. Uploads use
-`--update` and do not delete remote files.
-
-```bash
-# Preview source/config upload
-nu sync_files/windows2cluster.nu \
-  hfcluster /home/yuhanjin/Simulation/case_a Simulation/case_a
-
-# Perform the same upload
-nu sync_files/windows2cluster.nu \
-  hfcluster /home/yuhanjin/Simulation/case_a Simulation/case_a --run
-```
-
-### Cluster Download
-
-```bash
-nu sync_files/cluster2windows.nu \
-  <ssh_host> <remote_directory> <local_directory> \
-  [prefix] [suffix] [--run]
-```
-
-The optional prefix and suffix form the flat file filter `prefix*suffix`.
-Omitting both transfers all files selected by rsync.
-
-```bash
-# Preview bz*.sdf download
-nu sync_files/cluster2windows.nu \
-  hfcluster /remote/results /mnt/d/results bz .sdf
-
-# Perform the download
-nu sync_files/cluster2windows.nu \
-  hfcluster /remote/results /mnt/d/results bz .sdf --run
-```
-
-### Protected Cleanup
-
-```bash
-./clean_files/clean_files <target_directory> [--run]
-```
-
-Preview mode lists only explicit cache/editor junk and empty directories. It
-protects credentials, backup data, source, PIC inputs, templates, papers,
-configuration, archives, and common research-data formats. Real deletion
-requires both `--run` and an exact `DELETE` confirmation.
-
-### PIC Environment And Program Images
-
-Environment targets are `epoch`, `smilei`, and `smilei_spin`:
-
-```bash
-# Preview
-nu build_singularity_image/bd_pic_envs.nu smilei --dry-run
-
-# Real build: no --dry-run flag
-nu build_singularity_image/bd_pic_envs.nu smilei
-```
-
-Program targets are `epoch1d`, `epoch2d`, `epoch3d`, `smilei`, and
-`smilei_spin`:
-
-```bash
-# Preview
-nu build_singularity_image/bd_pic_images.nu epoch2d --dry-run
-
-# Real build: no --dry-run flag
-nu build_singularity_image/bd_pic_images.nu epoch2d
-```
-
-Build scripts package local source into a temporary directory, render a matching
-`*.def.tmpl`, and build the configured SIF with `--force`. Source paths, image
-paths, HDF5 settings, job counts, compilers, and executable names are explicit
-in the build scripts.
-
-### PIC Smoke Tests
-
-```bash
-# Preview every configured test
-nu build_singularity_image/test_pic_images.nu all --dry-run
-
-# Run one real test: no --dry-run flag
-nu build_singularity_image/test_pic_images.nu smilei_spin
-```
-
-The smoke inputs under `build_singularity_image/pic_test_inputs/` check startup,
-input parsing, executable linkage, MPI/HDF5 availability, and a short time loop.
-Successful smoke-test working directories are reported and removed. A failed
-test directory is reported and retained because its outputs may help diagnose
-the failure.
-
-### PIC Runs
-
-Each runner accepts one input and an optional positive MPI process count. It
-copies the input into a timestamped `Results_*` directory created below the
-current directory, then runs the configured Apptainer image there.
-
-```bash
-# EPOCH
-./run_pic/epoch1d_run.sh /path/to/input.deck [mpi_procs]
-./run_pic/epoch2d_run.sh /path/to/input.deck [mpi_procs]
-./run_pic/epoch3d_run.sh /path/to/input.deck [mpi_procs]
-
-# Smilei
-./run_pic/smilei_run.sh /path/to/namelist.py [mpi_procs]
-./run_pic/smilei_spin_run.sh /path/to/namelist.py [mpi_procs]
-```
-
-### ASR, Translation, And Subtitle Burn-In
-
-The Nushell pipeline runs faster-whisper transcription, optional offline NLLB
-translation, and optional FFmpeg burn-in:
-
-```bash
-# Transcription only
-nu asr_mt_scripts/asr_mt.nu /path/to/video.mp4 --vad
-
-# Transcribe, translate English to Simplified Chinese, and burn subtitles
-nu asr_mt_scripts/asr_mt.nu /path/to/video.mp4 \
-  --vad --translate --src-lang eng_Latn --tgt-lang zho_Hans --burn
-```
-
-Generated SRT and video files are written next to the input media. The configured
-container paths are under `~/Code_Program/asr_mt_containers`.
-
-### Account Helpers
-
-Both helpers are real-only workflows:
-
-```bash
-# Copy newest matching cluster keys to fixed WSL and Windows targets
-nu transfer_cluster_key/tsf_clst_key.nu
-
-# Initialize/sync a local folder to YuhanJin-USTC/<folder>.git
-nu git_update/git_update.nu /path/to/folder "Commit message"
-```
-
-Review the source paths, destination paths, Git account, and resulting changes
-before running either command.
-
-## Repository Layout
+- Cluster upload excludes common large outputs unless `--all-files` is used.
+- Cleanup deletes only explicit junk after typed confirmation.
+- Container builds use `build --force` and may replace an existing SIF.
+- Restore installs packages, restores credentials, runs Stow, and force-syncs
+  configured repositories.
+- SSH key transfer overwrites fixed WSL and Windows destinations.
+- Subtitle burn-in uses FFmpeg overwrite mode for its derived output.
+
+## Layout
 
 ```text
 .
-├── AGENTS.md                    # Coding-agent operating instructions
-├── README.md                    # Human-facing guide
-├── asr_mt_scripts/              # Whisper, NLLB, and FFmpeg pipeline
-├── backup_archlinux/            # Backup/restore scripts and protected payloads
-├── build_singularity_image/     # PIC templates, builders, and smoke inputs
-├── clean_files/                 # Safe-by-default cleanup and launcher
-├── git_update/                  # Real-only GitHub sync helper
-├── run_pic/                     # EPOCH/Smilei Apptainer runners
-├── sync_files/                  # NAS/cluster rsync scripts and rule files
-├── transfer_cluster_key/        # Real-only SSH key deployment
-├── update_iwan_routes/          # Panabit iWAN route preview/update
-└── update_archlinux/            # Dry-run-first Arch/AUR updates
+├── AGENTS.md
+├── README.md
+├── backup/
+│   └── archlinux/              # Arch package/config backup and restore
+├── build_containers/
+│   ├── pic/                    # PIC environment/program builders and tests
+│   └── post_process/           # Jupyter post-processing image builder
+├── clean/                      # Protected junk cleanup
+├── process/                    # ASR, translation, and subtitle burn-in
+├── run/                        # Unified EPOCH/Smilei PIC runner
+├── sync/                       # NAS and cluster rsync workflows
+├── transfer/                   # Cluster SSH-key deployment
+└── update/                     # Arch, iWAN, and Git update workflows
 ```
 
-## Configuration Points
+Detailed guides:
 
-| Area | Edit here |
+- [Arch backup and restore](backup/README.md)
+- [Container builds](build_containers/README.md)
+- [ASR and media processing](process/README.md)
+- [PIC runs](run/README.md)
+- [NAS and cluster sync](sync/README.md)
+- [Arch, iWAN, and Git updates](update/README.md)
+
+## Nushell Commands
+
+The corresponding aliases live in
+`/home/yuhanjin/dot_files/nushell/.config/nushell/config.nu`.
+
+| Alias | Workflow |
 | --- | --- |
-| iWAN managed host names | Top of `update_iwan_routes.ps1` |
-| NAS sources and destinations | Top of `sync_files/sync_files.nu` |
-| NAS exclusions | `sync_files/exclude_rules_nas_only` |
-| Cluster aliases and roots | Top of `sync_files/windows2cluster.nu` |
-| Cluster upload exclusions | `sync_files/exclude_rules_cluster_upload` |
-| SSH key source, names, destinations | `transfer_cluster_key/tsf_clst_key.nu` |
-| GitHub account and remote naming | `git_update/git_update.nu` |
-| PIC source, image, build, HDF5, jobs | `bd_pic_envs.nu`, `bd_pic_images.nu` |
-| PIC runtime image and executable | Matching script under `run_pic/` |
-| ASR/MT image paths and defaults | `asr_mt_scripts/asr_mt.nu` |
+| `sync_files` | NAS synchronization |
+| `clst2win` | Cluster download |
+| `win2clst` | Cluster upload |
+| `clean_files` | Protected junk cleanup |
+| `bd_pic_envs` | PIC environment-image build |
+| `bd_pic_images` | PIC program-image build |
+| `bd_post_process_images` | EPOCH Jupyter image build |
+| `test_pic_images` | PIC image smoke test |
+| `tsf_clst_key` | Cluster SSH-key deployment |
+| `backup_archlinux` | Arch backup |
+| `restore_archlinux` | Arch restore |
+| `update_archlinux` | Arch package update |
+| `asr_mt` | ASR/translation/subtitle pipeline |
+| `run_epoch_1d`, `run_epoch_2d`, `run_epoch_3d` | EPOCH runners |
+| `run_smilei`, `run_smilei_spin` | Smilei runners |
+| `update_iwan` | iWAN route update |
+| `update_git` | Publish local changes to the matching GitHub repository |
+
+`update_git` replaces the old `git_update` alias. The
+`bd_post_process_images` alias is new.
+
+## Quick Reference
+
+Run examples from the repository root.
+
+```bash
+# Local-only help
+bash backup/archlinux/backup.sh --help
+bash backup/archlinux/restore.sh --help
+nu process/asr_mt.nu --help
+bash run/run_pic.sh --help
+
+# Preview modes; external reads may still occur
+bash update/update_archlinux.sh
+bash update/update_iwan_routes.sh
+nu sync/sync_files.nu all
+nu clean/clean_files.nu /path/to/project
+
+# Container configuration previews
+nu build_containers/pic/bd_pic_envs.nu smilei --dry-run
+nu build_containers/pic/bd_pic_images.nu epoch2d --dry-run
+nu build_containers/pic/test_pic_images.nu all --dry-run
+nu build_containers/post_process/bd_post_process_images.nu epoch --dry-run
+```
+
+## Protected Cleanup
+
+```bash
+nu clean/clean_files.nu <target_directory> [--run]
+```
+
+Preview mode lists explicit cache/editor junk and empty directories. It protects
+credentials, backup data, source, PIC inputs, templates, papers,
+configuration, archives, and common research-data formats. Real deletion
+requires both `--run` and the exact typed confirmation `DELETE`.
+
+Never use a research directory, mounted drive, NAS path, cluster path, backup
+location, or user media as disposable cleanup test data.
+
+## Cluster Key Transfer
+
+```bash
+nu transfer/tsf_clst_key.nu
+```
+
+This real-only workflow selects the newest matching downloaded key for each
+configured cluster and force-copies it to fixed WSL and Windows SSH targets.
+Review the source prefixes, destination names, and target directories before
+running it. Do not execute it as validation or expose key material in logs.
+
+## EPOCH Source and Image Scope
+
+The EPOCH builders and runners in this repository target only the Generic
+source at `/home/yuhanjin/Source_Code/Epoch/Epoch/epoch` and the Generic images
+`epoch_epoch1d.sif`, `epoch_epoch2d.sif`, and `epoch_epoch3d.sif`. Existing
+Photon Probe or QED sources and SIF images are outside this reorganization and
+remain untouched.
+
+The open provenance proposal at
+`/home/yuhanjin/Research_Workflow/policy/open-proposals/epoch-sif-provenance.json`
+also remains byte-unchanged because the current CLI cannot revise an open
+proposal. A future supported revise or supersede workflow must reconcile that
+proposal with the Generic-only mapping and the new builder paths.
 
 ## Validation
 
-Use the narrowest syntax check for an edited file:
+Use the narrowest syntax or static check for an edited file:
 
 ```bash
 nu --ide-check 100 path/to/script.nu
 bash -n path/to/script.sh
-python -m py_compile path/to/script.py
+
+python3 -B -c 'import pathlib; p=pathlib.Path("path/to/script.py"); compile(p.read_text(encoding="utf-8"), str(p), "exec")'
 
 ps1_path=$(wslpath -w path/to/script.ps1)
 powershell.exe -NoProfile -Command \
   "\$p='$ps1_path'; \$tokens=\$null; \$errors=\$null; [void][System.Management.Automation.Language.Parser]::ParseFile(\$p,[ref]\$tokens,[ref]\$errors); if(\$errors.Count){\$errors; exit 1}"
 ```
 
-For sync, transfer, update, cleanup, and container changes, inspect help and
-command previews before any real execution. Do not use a real iWAN write,
-backup, restore, key transfer, Git push, package update, container build, or
-simulation run as a validation step.
+The Python check compiles in memory and does not create `__pycache__`. A
+PowerShell parse uses the Windows executable but must not execute the updater.
+Inspect help or a preview only after confirming that the path does not trigger
+external reads outside the authorized scope.
 
 ## Coding-Agent Guidance
 
-Repository-wide instructions for coding agents live in [`AGENTS.md`](AGENTS.md).
-They define common safety, code conventions, Worklog gating, validation, and
-completion criteria. The operational subtrees with distinct risk or behavior
-contracts carry a local `AGENTS.md`; those files inherit the root and contain
-only subsystem differences. The plural filename follows the
-[open AGENTS.md convention](https://agents.md/).
+Repository-wide instructions live in [AGENTS.md](AGENTS.md). Operational
+subtrees with distinct risk or behavior contracts carry a local `AGENTS.md`
+that inherits the root rules. Research Workflow V0 events replace obsolete
+Cards and Worklogs; read-only inspection and planning do not create an event.

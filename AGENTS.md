@@ -24,7 +24,7 @@ to make the repository resemble an application project.
   explicit approval for the exact paths. Protect research data, inputs,
   outputs, source, credentials, backups, archives, encrypted files, package
   lists, and configuration.
-- Do not modify `backup_archlinux/data`, key material, GPG data, or other
+- Do not modify `backup/archlinux/data`, key material, GPG data, or other
   protected payloads unless the user explicitly includes them.
 - Classify commands before execution as read-only, preview, or state-changing.
   State-changing work requires explicit user intent; destructive, privileged,
@@ -80,13 +80,37 @@ including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
 - Match nearby organization, naming, command construction, diagnostics, and
   comment density. Keep comments short and in English; do not narrate obvious
   code.
+- Name new directories by domain and prefer full `snake_case` verb-object names
+  for new entry scripts. Treat the compatibility names documented in
+  `README.md`, including `bd_*`, `tsf_clst_key`, `windows2cluster`, and
+  `cluster2windows`, as deliberate public exceptions. Preserve established
+  scientific target tokens such as `epoch1d`, `epoch2d`, `epoch3d`, and
+  `smilei_spin`.
 - Keep user-editable paths, target records, image names, job counts, and common
   parameters explicit and near the top when practical.
+- Resolve sibling scripts, templates, and rule files from the current script
+  location. Keep deliberate external research, image, mount, Windows, and
+  cluster paths explicit rather than hiding them behind discovery logic.
 - Preserve intentional absolute paths and shebangs. Do not rewrite working code
   solely for style or perform repository-wide formatting.
 - Keep command output concise. Preserve established `Target`, `Mode`, and
   `Rule` fields and status tags such as `[DRY-RUN]`, `[OK]`, `[SKIP]`, and
   `[ERROR]` where the script already uses them.
+- Use the output order title, `Target`, `Mode`, `Rule`, then workflow-specific
+  fields. Use `[DRY-RUN]` for preview guarantees, `[n/N]` for a stage that is
+  starting, `[OK]` only after success, `[SKIP]` for an intentional omission,
+  `[WARN]` for a recoverable problem, and `[ERROR]` for a fatal failure.
+- Send fatal diagnostics to stderr and exit nonzero. Do not swallow a failed
+  external command, print a normal stack trace for a user error, or report a
+  final `[OK]` after a partial failure.
+- Keep help safe and side-effect free. Present usage, one-line purpose,
+  arguments, options, and useful examples; parse help and invalid arguments
+  before dependency checks or external reads. Preserve each workflow's
+  established preview-by-default, real-by-default, or real-only mode.
+- Use short English comments only for intent, safety, invariants, or
+  non-obvious platform behavior. Remove comments that merely restate the next
+  command, but retain warnings about overwrite, deletion, remote-path,
+  trailing-slash, credential, rollback, and reproducibility behavior.
 - Do not silently invert an execution default or rename a public flag. If a
   mode changes, update help text, examples, `README.md`, and all affected rules
   in the same task.
@@ -95,6 +119,8 @@ including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
 
 - Preserve the existing strict-mode choice; use `set -Eeuo pipefail` for a new
   operational script when appropriate, but do not retrofit it blindly.
+- Use two-space indentation, `snake_case` functions and locals, and
+  `UPPER_SNAKE_CASE` user configuration. Preserve intentional shebangs.
 - Quote path and user-derived values. Prefer arrays for constructed commands,
   keep preflight and execution blocks easy to scan, and do not introduce
   `eval`.
@@ -103,22 +129,41 @@ including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
 
 - Preserve `#!/usr/bin/env nu`, typed `main` parameters, and useful `--help`
   output.
+- Use `kebab-case` commands and helper functions, and `snake_case` variables and
+  record fields. Keep user-facing flags in `--kebab-case`.
 - Prefer lists with argument spreading, `path expand`, and `path join`.
   Preserve deliberate remote path strings and handle external exit status when
   it affects correctness.
+- Use `error make` for fatal local validation and an explicit captured result
+  or exit-code check for external commands. Do not mix a printed `[ERROR]` with
+  a successful return path.
 
 ### Python
 
 - Keep helpers focused with `argparse` entry points and explicit UTF-8 text
   handling. Keep heavyweight model or CUDA assumptions visible near use.
+- Use `snake_case`, `UPPER_SNAKE_CASE` constants, lightweight type annotations,
+  a `main()` function, and `raise SystemExit(main())`. Keep progress and errors
+  on stderr when stdout carries a machine-readable result.
 - Do not add a host dependency manifest or package structure for code intended
   to run inside a container unless requested.
 
+### PowerShell
+
+- Preserve strict mode, stop-on-error behavior, `Verb-Noun` functions,
+  PascalCase parameters, camelCase locals, `-LiteralPath`, UTF-8-no-BOM writes,
+  atomic replacement, and rollback guards.
+- Keep persisted JSON field names unchanged when they form an external schema.
+  Use the shared header, field, and status conventions instead of scattered
+  `Write-Host` diagnostics.
+
 ## Research Workflow Contract
 
-- Before a substantive task, run
+- For a Case target under a canonical or same-relative-path root, run
   `python3 -B /home/yuhanjin/Research_Workflow/tools/researchctl.py context "<target>" --recent 3 --json`
-  and read the bounded V0 root context.
+  and use only the bounded V0 Case context. For this non-Case registered scripts
+  root, use the nearest instructions and direct file evidence; do not call
+  `context` on the registered root itself.
 - Do not create Cards or Worklogs or reconstruct history. On the first
   substantive modification, reusable validation result, or explicit decision
   owned by a subsystem, preview `researchctl.py event record` for that exact
