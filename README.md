@@ -16,7 +16,8 @@ remain explicit so daily research workflows are easy to inspect and edit.
 - Preview external changes where the workflow supports it.
 - Protect credentials, backup payloads, source trees, simulation data, and
   reproducibility.
-- Keep PIC image builds, post-processing image builds, and PIC runs separate.
+- Keep PIC image builds, post-processing image builds, PIC runs, and cluster
+  Jupyter sessions separate.
 
 ## Environment
 
@@ -36,6 +37,7 @@ tools required by the workflow being used.
 | Core scripts | Bash, Nushell, standard Linux utilities |
 | Container builds | Apptainer or Singularity, `sudo`, configured source and image paths |
 | PIC runs | Apptainer and the configured SIF images |
+| Cluster Jupyter sessions | Bash, OpenSSH, Python 3, curl, `cmd.exe`, Slurm, Singularity 3.7.3, and the configured Jupyter SIF |
 | NAS and cluster transfer | `rsync`, OpenSSH, configured mounts and SSH aliases |
 | Arch backup and restore | `tar`, GPG, Git, Stow, Arch package tools |
 | iWAN routes | WSL, `powershell.exe`, `wslpath`, Panabit iWAN 2.1.3 |
@@ -57,6 +59,7 @@ any command.
 | `clean/clean_files.nu` | Preview | Add `--run`, then type `DELETE` |
 | Container image builders | **Real build** | Add `--dry-run` to preview |
 | PIC image smoke tests | **Real test** | Add `--dry-run` to preview |
+| Cluster Jupyter lifecycle | **Real** | Use explicit `start`, `connect`, `status`, or `stop` |
 | Backup, restore, key transfer, Git update, PIC run, ASR/MT | **Real** | No dry run |
 
 A preview can still read external state. NAS and cluster rsync previews, iWAN
@@ -71,6 +74,8 @@ Important boundaries:
 - Cluster upload excludes common large outputs unless `--all-files` is used.
 - Cleanup deletes only explicit junk after typed confirmation.
 - Container builds use `build --force` and may replace an existing SIF.
+- Cluster Jupyter sessions use Slurm compute nodes, preserve token
+  authentication, and never upload the configured SIF automatically.
 - Restore installs packages, restores credentials, runs Stow, and force-syncs
   configured repositories.
 - SSH key transfer overwrites fixed WSL and Windows destinations.
@@ -89,7 +94,7 @@ Important boundaries:
 │   └── post_process/           # Jupyter post-processing image builder
 ├── clean/                      # Protected junk cleanup
 ├── process/                    # ASR, translation, and subtitle burn-in
-├── run/                        # Unified EPOCH/Smilei PIC runner
+├── run/                        # PIC and cluster Jupyter runtimes
 ├── sync/                       # NAS and cluster rsync workflows
 ├── transfer/                   # Cluster SSH-key deployment
 └── update/                     # Arch, iWAN, and Git update workflows
@@ -100,7 +105,7 @@ Detailed guides:
 - [Arch backup and restore](backup/README.md)
 - [Container builds](build_containers/README.md)
 - [ASR and media processing](process/README.md)
-- [PIC runs](run/README.md)
+- [PIC and Jupyter runs](run/README.md)
 - [NAS and cluster sync](sync/README.md)
 - [Arch, iWAN, and Git updates](update/README.md)
 
@@ -126,6 +131,7 @@ The corresponding aliases live in
 | `asr_mt` | ASR/translation/subtitle pipeline |
 | `run_epoch_1d`, `run_epoch_2d`, `run_epoch_3d` | EPOCH runners |
 | `run_smilei`, `run_smilei_spin` | Smilei runners |
+| `run_jupyter` | Slurm Jupyter session lifecycle |
 | `update_iwan` | iWAN route update |
 | `update_git` | Publish local changes to the matching GitHub repository |
 
@@ -142,6 +148,7 @@ bash backup/archlinux/backup.sh --help
 bash backup/archlinux/restore.sh --help
 nu process/asr_mt.nu --help
 bash run/run_pic.sh --help
+bash run/run_jupyter.sh --help
 
 # Preview modes; external reads may still occur
 bash update/update_archlinux.sh
