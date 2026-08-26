@@ -86,7 +86,7 @@ case "$TARGET" in
   epoch1d)
     FAMILY="epoch"
     DISPLAY_NAME="EPOCH 1D"
-    SIF_PATH="/home/yuhanjin/Code_Program/Epoch/Epoch1d/epoch_epoch1d.sif"
+    SIF_PATH="/home/yuhanjin/Code_Program/Epoch/Epoch1d/epoch_epoch1d_qed.sif"
     EXECUTABLE="epoch1d"
     ;;
   epoch2d)
