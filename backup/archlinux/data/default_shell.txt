@@ -1,1 +1,1 @@
-/usr/sbin/nu
+/usr/bin/bash
