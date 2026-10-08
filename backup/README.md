@@ -41,6 +41,8 @@ repository URLs, installed Treesitter parser names, and the official Linux
 Neovim bundle matching the source device's stable version. Configuration and
 runtime checksums are saved in the same archive. A failed snapshot leaves the
 previous Neovim archive intact and stops before the other backup stages.
+The repository ignore rules allow this specific archive. Include it with the
+updated helper scripts when committing and transferring a backup.
 
 This stage requires Python 3.12+, Git, an installed stable Neovim, configured
 plugins and parsers, and access to the official GitHub release. Linux x86_64

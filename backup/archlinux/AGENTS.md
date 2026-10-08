@@ -35,6 +35,8 @@ repository-root instructions. Changes confined here use
   plugin URLs, parser names, official fixed-version runtime and checksums.
   Stage the snapshot and helpers before repository sync. Preserve effective
   and repository Neovim contents before resetting their Stow source.
+  Keep an exact Git ignore exception for `data/nvim.tar.gz`; do not expose
+  other archives or temporary payloads through a broad exception.
 - Force Neovim to the snapshot after preserving existing configuration,
   plugin/parser trees, runtime and launcher. Target version differences and
   local plugin edits must not block matching. Do not downgrade Arch packages.
