@@ -19,8 +19,31 @@ repository-root instructions. Changes confined here use
   home-level `/home/yuhanjin/AGENTS.md`.
 - Preserve timestamped safety backups and the exclusion of `.ssh/config`,
   which is owned by dot_files/Stow. Never remove safety backups automatically.
+- Keep safety directories unique and preserve repeated backups. Do not move
+  existing real parent directories when only archive members are being restored.
+- Preflight all Stow packages together. Preserve matching links, back up the
+  explicit Git/SSH/rclone targets, and restore absent targets on backup or Stow
+  failure. Keep completed links and their original backups after partial failure.
+- Stage sensitive application files before replacing their destination. Preserve
+  matching archived symbolic links; reject missing targets and unsupported types.
+  Never extract link-only members as file contents or write through parent links.
+- Do not force-sync the `scripts` checkout containing the running restore script.
+  Report the skipped synchronization explicitly.
 - Keep temporary restore paths unique and clean them on success and failure.
   Cleanup may target only temporary paths created by that invocation.
+- Keep the Neovim snapshot self-contained: configuration, original lockfile,
+  plugin URLs, parser names, official fixed-version runtime and checksums.
+  Stage the snapshot and helpers before repository sync. Preserve effective
+  and repository Neovim contents before resetting their Stow source.
+- Force Neovim to the snapshot after preserving existing configuration,
+  plugin/parser trees, runtime and launcher. Target version differences and
+  local plugin edits must not block matching. Do not downgrade Arch packages.
+- Restore the bundled executable and its VIMRUNTIME together. Restore plugin
+  commits before reading their APIs; keep the lockfile unchanged. Never use
+  Lazy sync/clean/update or load the user's startup callbacks during recovery.
+- Wait for native builds and parser installation, check their actual results,
+  and verify parser revisions and queries in a fresh Neovim process. Keep
+  external LSP/formatter binaries outside the plugin-version guarantee.
 - Changes to forced Git synchronization, package installation, proxy use,
   privilege boundaries, credential restoration, or backup replacement require
   explicit authorization and prominent handoff notes.
@@ -31,8 +54,15 @@ repository-root instructions. Changes confined here use
 - Inspect help only after confirming that it returns before state-changing work.
 - Review archive members, quoting, privilege guards, traps, safety backup paths,
   ownership, modes, rollback, and failure cleanup statically.
-- Never run backup, restore, package, GPG, Stow, credential, or forced Git
+- Check Stow argument handling with the installed binary in task-created
+  temporary package and target directories. Do not substitute a mock for this
+  check or use user configuration as test data.
+- Never run backup, restore, package, GPG, credential, or forced Git
   operations for routine validation.
+- Validate the Neovim helpers with temporary homes and real Neovim modules.
+  Cover different old versions, edited caches, safe archive extraction,
+  Stow deployment, failed builds and retained safety backups. Do not write
+  into live configuration, plugin directories or protected payloads as a test.
 
 <!-- research-workflow:policy:start -->
 <!-- digest: 53b828bcd3473143cd53c8eb3790393d6fec47f065abe2b14e0e167f32b593b7 -->

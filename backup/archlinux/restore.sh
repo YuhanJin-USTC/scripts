@@ -76,12 +76,31 @@ if [ "$#" -ne 0 ]; then
 fi
 
 RESTORE_STAMP=$(date +%Y%m%d_%H%M%S)
-RESTORE_BACKUP_DIR="/root/arch_restore_backup_$RESTORE_STAMP"
+
+check_restore_parent() {
+  local base=$1
+  local target=$2
+  local parent
+
+  if [ -L "$base" ] || { [ -e "$base" ] && [ ! -d "$base" ]; }; then
+    status ERROR "Restore base is not a regular directory: $base."
+    return 1
+  fi
+  parent=$(dirname "$target")
+  while [ "$parent" != "$base" ] && [ "$parent" != "/" ]; do
+    if [ -L "$parent" ] || { [ -e "$parent" ] && [ ! -d "$parent" ]; }; then
+      status ERROR "Restore parent is not a regular directory: $parent."
+      return 1
+    fi
+    parent=$(dirname "$parent")
+  done
+}
 
 backup_existing_path() {
   local target=$1
   local rel
   local backup_target
+  local suffix=0
 
   if [ ! -e "$target" ] && [ ! -L "$target" ]; then
     return
@@ -89,8 +108,13 @@ backup_existing_path() {
 
   rel=${target#/}
   backup_target="$RESTORE_BACKUP_DIR/$rel"
+  check_restore_parent "$RESTORE_BACKUP_DIR" "$backup_target" || return 1
+  while [ -e "$backup_target" ] || [ -L "$backup_target" ]; do
+    suffix=$((suffix + 1))
+    backup_target="$RESTORE_BACKUP_DIR/$rel.$suffix"
+  done
   mkdir -p "$(dirname "$backup_target")"
-  mv "$target" "$backup_target"
+  mv -T -- "$target" "$backup_target" || return 1
   status OK "Existing $target moved to $backup_target."
 }
 
@@ -99,14 +123,38 @@ backup_existing_from_tar() {
   local base=$2
   local entry
   local clean_entry
+  local entries
+  local excluded
+  local skip
+  shift 2
+
+  entries=$(tar -tzf "$archive") || return 1
+  while IFS= read -r entry; do
+    clean_entry=${entry#./}
+    case "$clean_entry" in
+      /*|..|../*|*/../*|*/..)
+        status ERROR "Unsafe archive path: $entry."
+        return 1
+        ;;
+    esac
+  done <<<"$entries"
 
   while IFS= read -r entry; do
     clean_entry=${entry#./}
     clean_entry=${clean_entry%/}
     [ -z "$clean_entry" ] && continue
-    [ "$clean_entry" = ".ssh/config" ] && continue
-    backup_existing_path "$base/$clean_entry"
-  done < <(tar -tzf "$archive")
+    [ "$clean_entry" = "." ] && continue
+    skip=false
+    for excluded in "$@"; do
+      [ "$clean_entry" = "$excluded" ] && skip=true
+    done
+    [ "$skip" = true ] && continue
+    if [[ "$entry" == */ ]] && [ -d "$base/$clean_entry" ] && [ ! -L "$base/$clean_entry" ]; then
+      continue
+    fi
+    check_restore_parent "$base" "$base/$clean_entry" || return 1
+    backup_existing_path "$base/$clean_entry" || return 1
+  done <<<"$entries"
 }
 
 restore_sensitive_file() {
@@ -114,16 +162,62 @@ restore_sensitive_file() {
   local rel_path=$2
   local mode=$3
   local target="$TARGET_HOME/$rel_path"
+  local entries
+  local entry
+  local member=""
+  local member_info
+  local temp_dir
+  local staged
+  local link_target
 
-  if ! tar -tzf "$archive" "$rel_path" >/dev/null 2>&1; then
+  entries=$(tar -tzf "$archive") || return 1
+  while IFS= read -r entry; do
+    [ "${entry#./}" = "$rel_path" ] || continue
+    if [ -n "$member" ]; then
+      status ERROR "Duplicate sensitive archive member: $rel_path."
+      return 1
+    fi
+    member=$entry
+  done <<<"$entries"
+  if [ -z "$member" ]; then
     return
   fi
 
-  backup_existing_path "$target"
+  check_restore_parent "$TARGET_HOME" "$target" || return 1
+  member_info=$(LC_ALL=C tar -tvzf "$archive" -- "$member") || return 1
+  case "${member_info:0:1}" in
+    -|l) ;;
+    *)
+      status ERROR "Unsupported sensitive archive member: $rel_path."
+      return 1
+      ;;
+  esac
+
+  temp_dir=$(mktemp -d "$SECURE_TMP_DIR/app.XXXXXX") || return 1
+  staged="$temp_dir/$rel_path"
+  tar --no-same-owner --no-same-permissions -xzf "$archive" -C "$temp_dir" -- "$member" || return 1
+  if [ -L "$staged" ]; then
+    link_target=$(readlink "$staged")
+    if [[ "$link_target" != /* ]]; then
+      link_target="$(dirname "$target")/$link_target"
+    fi
+    if [ ! -L "$target" ] || [ ! -f "$target" ] || \
+      [ "$(realpath -m "$link_target")" != "$(readlink -f "$target")" ]; then
+      status ERROR "Archived link has no matching restored target: $target."
+      return 1
+    fi
+    CODEX_TEMP_CLEANUP=1 rm -rf -- "$temp_dir"
+    status OK "Existing link retained for $target."
+    return
+  fi
+
+  [ -f "$staged" ] || return 1
+  chown "$TARGET_USER:$TARGET_USER" "$staged" || return 1
+  chmod "$mode" "$staged" || return 1
+  backup_existing_path "$target" || return 1
   mkdir -p "$(dirname "$target")"
-  tar -xOzf "$archive" "$rel_path" >"$target"
-  chown "$TARGET_USER:$TARGET_USER" "$target"
-  chmod "$mode" "$target"
+  mv -T -- "$staged" "$target" || return 1
+  CODEX_TEMP_CLEANUP=1 rm -rf -- "$temp_dir"
   status OK "Restored $target."
 }
 
@@ -178,6 +272,7 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+RESTORE_BACKUP_DIR=$(mktemp -d "/root/arch_restore_backup_$RESTORE_STAMP.XXXXXX")
 print_header
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
@@ -191,7 +286,20 @@ else
 fi
 field "Backup root" "$BACKUP_ROOT"
 
-step "1/13" "Restore system configurations."
+if [ ! -r "$BACKUP_ROOT/data/nvim.tar.gz" ]; then
+  status ERROR "nvim.tar.gz is missing. Run the updated backup.sh on the source device first."
+  exit 1
+fi
+NVIM_STAGE=$(mktemp -d)
+cleanup_restore_tmp() {
+  [ -z "${SECURE_TMP_DIR:-}" ] || CODEX_TEMP_CLEANUP=1 rm -rf -- "$SECURE_TMP_DIR"
+  CODEX_TEMP_CLEANUP=1 rm -rf -- "$NVIM_STAGE"
+}
+trap cleanup_restore_tmp EXIT
+cp "$BACKUP_ROOT/data/nvim.tar.gz" "$NVIM_STAGE/snapshot.tar.gz"
+cp "$SCRIPT_DIR/nvim_state.py" "$SCRIPT_DIR/nvim_plugins.lua" "$NVIM_STAGE/"
+
+step "1/14" "Restore system configurations."
 if [ -f "$BACKUP_ROOT/data/sys_config.tar.gz" ]; then
   backup_existing_from_tar "$BACKUP_ROOT/data/sys_config.tar.gz" /
   tar -xzf "$BACKUP_ROOT/data/sys_config.tar.gz" -C /
@@ -200,7 +308,7 @@ else
   status SKIP "sys_config.tar.gz not found."
 fi
 
-step "2/13" "Configure the system locale."
+step "2/14" "Configure the system locale."
 if grep -q "^#en_US.UTF-8 UTF-8" /etc/locale.gen; then
   sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
   locale-gen
@@ -210,7 +318,7 @@ else
   status SKIP "Locale is already configured."
 fi
 
-step "3/13" "Initialize the keyring and install base packages."
+step "3/14" "Initialize the keyring and install base packages."
 if [ ! -d "/etc/pacman.d/gnupg" ]; then
   pacman-key --init
   pacman-key --populate archlinux
@@ -219,9 +327,9 @@ else
   status SKIP "Pacman keyring is already initialized."
 fi
 update_keyring_with_retry
-pacman_upgrade_and_install base-devel git stow sudo wget tar openssh gnupg
+pacman_upgrade_and_install base-devel git stow sudo wget tar openssh gnupg python
 
-step "4/13" "Configure target user and privileges."
+step "4/14" "Configure target user and privileges."
 if ! id "$TARGET_USER" &>/dev/null; then
   useradd -m -G wheel -s /bin/bash "$TARGET_USER"
   echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" >/etc/sudoers.d/wheel_nopasswd
@@ -240,7 +348,7 @@ default=$TARGET_USER
 EOF
 fi
 
-step "5/13" "Migrate restore scripts and data."
+step "5/14" "Migrate restore scripts and data."
 if [[ "$BACKUP_ROOT" != "$TARGET_HOME"* ]]; then
   printf '%s\n' "Migrating restore payload to $TARGET_HOME."
   TARGET_BACKUP_ROOT="$TARGET_HOME/backup/archlinux"
@@ -253,7 +361,11 @@ else
   status SKIP "Restore payload is already under $TARGET_HOME."
 fi
 
-step "6/13" "Restore home configurations."
+mkdir "$NVIM_STAGE/input"
+python3 "$NVIM_STAGE/nvim_state.py" stage "$NVIM_STAGE/snapshot.tar.gz" "$NVIM_STAGE/input"
+chown -R "$TARGET_USER:$TARGET_USER" "$NVIM_STAGE"
+
+step "6/14" "Restore home configurations."
 if [ -f "$BACKUP_ROOT/data/home_config.tar.gz" ]; then
   backup_existing_from_tar "$BACKUP_ROOT/data/home_config.tar.gz" "$TARGET_HOME"
   tar -xzf "$BACKUP_ROOT/data/home_config.tar.gz" -C "$TARGET_HOME"
@@ -267,7 +379,7 @@ else
   status SKIP "home_config.tar.gz not found."
 fi
 
-step "7/13" "Restore sensitive credentials."
+step "7/14" "Restore sensitive credentials."
 if [ -f "$BACKUP_ROOT/data/secure_data.tar.gz.gpg" ]; then
   echo -n "  -> Enter GPG passphrase for credential decryption: "
   read -s GPG_PASS
@@ -275,22 +387,10 @@ if [ -f "$BACKUP_ROOT/data/secure_data.tar.gz.gpg" ]; then
 
   SECURE_TMP_DIR=$(mktemp -d)
   SECURE_TAR_TMP="$SECURE_TMP_DIR/secure_data.tar.gz"
-  cleanup_secure_tmp() {
-    CODEX_TEMP_CLEANUP=1 rm -f "$SECURE_TAR_TMP"
-    CODEX_TEMP_CLEANUP=1 rmdir "$SECURE_TMP_DIR" 2>/dev/null || true
-  }
-  trap cleanup_secure_tmp EXIT
 
   if echo "$GPG_PASS" | gpg --yes --batch --pinentry-mode loopback --passphrase-fd 0 --decrypt --output "$SECURE_TAR_TMP" "$BACKUP_ROOT/data/secure_data.tar.gz.gpg"; then
-    while IFS= read -r entry; do
-      clean_entry=${entry#./}
-      clean_entry=${clean_entry%/}
-      [ -z "$clean_entry" ] && continue
-      [ "$clean_entry" = ".ssh/config" ] && continue
-      [ "$clean_entry" = ".config/rclone/rclone.conf" ] && continue
-      [ "$clean_entry" = ".codex/.env" ] && continue
-      backup_existing_path "$TARGET_HOME/$clean_entry"
-    done < <(tar -tzf "$SECURE_TAR_TMP")
+    backup_existing_from_tar "$SECURE_TAR_TMP" "$TARGET_HOME" \
+      ".ssh/config" ".config/rclone/rclone.conf" ".codex/.env"
 
     tar \
       --exclude=".ssh/config" \
@@ -313,7 +413,7 @@ else
   status SKIP "No secure data archive found."
 fi
 
-step "8/13" "Install packages from Pacman."
+step "8/14" "Install packages from Pacman."
 PKG_LIST_DIR="$BACKUP_ROOT/pkg_lists"
 if [ -f "$PKG_LIST_DIR/pkglist-pacman.txt" ]; then
   pacman_install_list "$PKG_LIST_DIR/pkglist-pacman.txt"
@@ -322,7 +422,7 @@ else
   exit 1
 fi
 
-step "9/13" "Deploy the AUR helper."
+step "9/14" "Deploy the AUR helper."
 su -s /bin/bash "$TARGET_USER" <<EOF
 set -e
 export http_proxy="$PROXY_URL"
@@ -341,7 +441,7 @@ else
 fi
 EOF
 
-step "10/13" "Install packages from the AUR."
+step "10/14" "Install packages from the AUR."
 if [ -f "$PKG_LIST_DIR/pkglist-aur.txt" ]; then
   AUR_PKGS=$(grep -v '^#' "$PKG_LIST_DIR/pkglist-aur.txt" | grep -vwE 'yay|yay-bin' | tr '\n' ' ' | xargs)
 
@@ -360,7 +460,7 @@ else
   exit 1
 fi
 
-step "11/13" "Restore repositories and deploy Stow packages."
+step "11/14" "Restore repositories and deploy Stow packages."
 if [ ! -r "$GITHUB_SSH_KEY" ]; then
   status ERROR "GitHub SSH key was not restored at $GITHUB_SSH_KEY."
   exit 1
@@ -372,6 +472,8 @@ export http_proxy="$PROXY_URL"
 export https_proxy="$PROXY_URL"
 export all_proxy="$SOCKS_URL"
 export GIT_SSH_COMMAND="ssh -F /dev/null -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
+
+$(declare -f color status_label status check_restore_parent)
 
 # Force remote state for restored repos.
 force_sync_repo() {
@@ -390,37 +492,131 @@ force_sync_repo() {
   fi
 }
 
+USER_BACKUP_DIR=\$(mktemp -d "$TARGET_HOME/restore_backup_$RESTORE_STAMP.XXXXXX")
+python3 "$NVIM_STAGE/nvim_state.py" check-runtime "$NVIM_STAGE/input"
+python3 "$NVIM_STAGE/nvim_state.py" preserve-config "\$USER_BACKUP_DIR"
+
 force_sync_repo "$DOTFILES_REPO" "$TARGET_HOME/dot_files"
+python3 "$NVIM_STAGE/nvim_state.py" config "$NVIM_STAGE/input" \
+  "$TARGET_HOME/dot_files/nvim/.config/nvim" "\$USER_BACKUP_DIR"
 
 git config --file "$TARGET_HOME/dot_files/git/.gitconfig" \
   core.sshCommand 'ssh -F ~/.ssh/config'
 
 echo "  -> Executing stow configuration..."
-USER_BACKUP_DIR="$TARGET_HOME/restore_backup_$RESTORE_STAMP"
-# Keep global Git and SSH configs owned by dot_files/stow.
-for stow_path in .gitconfig .ssh/config; do
-  target="$TARGET_HOME/\$stow_path"
-  if [ -e "\$target" ] || [ -L "\$target" ]; then
-    backup_target="\$USER_BACKUP_DIR/\$stow_path"
-    mkdir -p "\$(dirname "\$backup_target")"
-    mv "\$target" "\$backup_target"
-    echo "  -> Existing \$target moved to \$backup_target"
-  fi
-done
 
-cd "$TARGET_HOME/dot_files" || exit
-for target_dir in */; do
-  dir_name="\${target_dir%/}"
-  if [[ "\$dir_name" == ".git" ]]; then
-    continue
-  fi
-  stow --no-folding --restow -t "$TARGET_HOME" "\$dir_name"
-done
+deploy_stow_packages() {
+  local package_path
+  local stow_path
+  local target
+  local backup_target
+  local target_dir
+  local exit_code
+  local packages=()
+  local moved_targets=()
+  local moved_backups=()
 
-force_sync_repo "$SCRIPTS_REPO" "$TARGET_HOME/scripts"
+  restore_stow_backups() {
+    local index
+    local target
+    local failed=false
+
+    for ((index=\${#moved_targets[@]} - 1; index>=0; index--)); do
+      target="\${moved_targets[index]}"
+      if [ ! -e "\$target" ] && [ ! -L "\$target" ]; then
+        if ! mv -T -- "\${moved_backups[index]}" "\$target"; then
+          status ERROR "Could not restore \$target; backup kept at \${moved_backups[index]}."
+          failed=true
+        fi
+      else
+        status WARN "Current \$target retained; backup kept at \${moved_backups[index]}."
+      fi
+    done
+    [ "\$failed" = false ]
+  }
+
+  cd "$TARGET_HOME/dot_files" || return 1
+  for target_dir in */; do
+    [ -d "\$target_dir" ] || continue
+    case "\$target_dir" in
+      -*|+*)
+        status ERROR "Invalid Stow package name: \${target_dir%/}."
+        return 1
+        ;;
+    esac
+    packages+=("\${target_dir%/}")
+  done
+  if [ "\${#packages[@]}" -eq 0 ]; then
+    status ERROR "No Stow packages found."
+    return 1
+  fi
+
+  # Preserve existing files before Stow takes ownership.
+  for package_path in git/.gitconfig ssh/.ssh/config rclone/.config/rclone/rclone.conf; do
+    [ -e "\$package_path" ] || [ -L "\$package_path" ] || continue
+    stow_path="\${package_path#*/}"
+    target="$TARGET_HOME/\$stow_path"
+    check_restore_parent "$TARGET_HOME" "\$target" || return 1
+  done
+  for package_path in git/.gitconfig ssh/.ssh/config rclone/.config/rclone/rclone.conf; do
+    [ -e "\$package_path" ] || [ -L "\$package_path" ] || continue
+    stow_path="\${package_path#*/}"
+    target="$TARGET_HOME/\$stow_path"
+    if [ -L "\$target" ] && [ -e "\$target" ] && \
+      [ "\$(readlink -f "\$target")" = "\$(realpath "\$package_path")" ]; then
+      continue
+    fi
+    if [ -e "\$target" ] || [ -L "\$target" ]; then
+      backup_target="\$USER_BACKUP_DIR/\$stow_path"
+      if ! mkdir -p "\$(dirname "\$backup_target")" || ! mv -T -- "\$target" "\$backup_target"; then
+        restore_stow_backups || true
+        status ERROR "Could not back up \$target."
+        return 1
+      fi
+      moved_targets+=("\$target")
+      moved_backups+=("\$backup_target")
+      echo "  -> Existing \$target moved to \$backup_target"
+    fi
+  done
+
+  # Stow does not collect package names after --.
+  if ! stow --simulate --no-folding --restow -t "$TARGET_HOME" "\${packages[@]}"; then
+    restore_stow_backups || true
+    status ERROR "Stow preflight failed; no packages deployed."
+    return 1
+  fi
+  if stow --no-folding --restow -t "$TARGET_HOME" "\${packages[@]}"; then
+    return
+  else
+    exit_code=\$?
+    restore_stow_backups || true
+    status ERROR "Stow deployment failed; completed links and remaining backups retained."
+    return "\$exit_code"
+  fi
+}
+
+deploy_stow_packages
+
+case "$SCRIPT_DIR/" in
+  "$TARGET_HOME/scripts/"*)
+    status WARN "Active scripts repository kept unchanged; synchronize it separately after restore."
+    ;;
+  *) force_sync_repo "$SCRIPTS_REPO" "$TARGET_HOME/scripts" ;;
+esac
 EOF
 
-step "12/13" "Restore sensitive application configurations."
+step "12/14" "Restore the locked Neovim environment."
+su -s /bin/bash "$TARGET_USER" <<EOF
+set -e
+export http_proxy="$PROXY_URL"
+export https_proxy="$PROXY_URL"
+export all_proxy="$SOCKS_URL"
+export SHELL=/bin/bash
+unset NVIM_APPNAME XDG_CONFIG_HOME XDG_DATA_HOME VIMRUNTIME
+python3 "$NVIM_STAGE/nvim_state.py" restore "$NVIM_STAGE/input" "$NVIM_STAGE/nvim_plugins.lua"
+EOF
+
+step "13/14" "Restore sensitive application configurations."
 if [ -n "${SECURE_TAR_TMP:-}" ] && [ -f "$SECURE_TAR_TMP" ]; then
   restore_sensitive_file "$SECURE_TAR_TMP" ".config/rclone/rclone.conf" 600
   restore_sensitive_file "$SECURE_TAR_TMP" ".codex/.env" 600
@@ -428,7 +624,7 @@ else
   status SKIP "No decrypted sensitive archive is available."
 fi
 
-step "13/13" "Restore the default shell configuration."
+step "14/14" "Restore the default shell configuration."
 SHELL_FILE="$BACKUP_ROOT/data/default_shell.txt"
 
 if [ -f "$SHELL_FILE" ]; then
