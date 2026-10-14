@@ -17,6 +17,7 @@ __pycache__/
 !backup/archlinux/data/home_config.tar.gz
 !backup/archlinux/data/sys_config.tar.gz
 !backup/archlinux/data/nvim.tar.gz
+!backup/archlinux/data/rayfile.tar.gz
 !backup/archlinux/data/secure_data.tar.gz.gpg
 backup/archlinux/data/secure_data.tar.gz
 backup/archlinux/data/.ssh

@@ -39,6 +39,7 @@ tools required by the workflow being used.
 | PIC runs | Apptainer and the configured SIF images |
 | Cluster Jupyter sessions | Bash, OpenSSH, Python 3, curl, `cmd.exe`, Slurm, Singularity 3.7.3, and the configured Jupyter SIF |
 | NAS and cluster transfer | `rsync`, OpenSSH, configured mounts and SSH aliases |
+| Cluster fast transfer | Reviewed `rayfile-c`, verified portal endpoint and operation-specific token |
 | Arch backup and restore | `tar`, GPG, Git, Stow, Arch package tools |
 | iWAN routes | WSL, `powershell.exe`, `wslpath`, Panabit iWAN 2.1.3 |
 | ASR and translation | Singularity, NVIDIA GPU access in WSL, local model images |
@@ -56,6 +57,8 @@ any command.
 | `sync/sync_files.nu` | Preview | Add `--run` |
 | `sync/windows2cluster.nu` | Preview | Add `--run` |
 | `sync/cluster2windows.nu` | Preview | Add `--run` |
+| `sync/fast_cluster2windows.nu` | Local command preview | Add `--run` |
+| `sync/fast_windows2cluster.nu` | Local command preview | Add `--run` |
 | `clean/clean_files.nu` | Preview | Add `--run`, then type `DELETE` |
 | Container image builders | **Real build** | Add `--dry-run` to preview |
 | PIC image smoke tests | **Real test** | Add `--dry-run` to preview |
@@ -95,7 +98,7 @@ Important boundaries:
 ├── clean/                      # Protected junk cleanup
 ├── process/                    # ASR, translation, and subtitle burn-in
 ├── run/                        # PIC and cluster Jupyter runtimes
-├── sync/                       # NAS and cluster rsync workflows
+├── sync/                       # NAS and cluster transfer workflows
 ├── transfer/                   # Cluster SSH-key deployment
 └── update/                     # Arch, iWAN, and Git update workflows
 ```
@@ -109,6 +112,11 @@ Detailed guides:
 - [NAS and cluster sync](sync/README.md)
 - [Arch, iWAN, and Git updates](update/README.md)
 
+Arch backup also snapshots the official Rayfile fast-transfer client under
+`~/.local/share/rayfile-runtime`, with its entry point at `~/.local/bin/rayfile-c`.
+See [Rayfile installation and recovery](backup/README.md#rayfile) for the
+locked program snapshot, device-local logs and transfer-validation limits.
+
 ## Nushell Commands
 
 The corresponding aliases live in
@@ -119,6 +127,8 @@ The corresponding aliases live in
 | `sync_files` | NAS synchronization |
 | `clst2win` | Cluster download |
 | `win2clst` | Cluster upload |
+| `fclst2win` | Cluster fast download, local preview by default |
+| `fwin2clst` | Cluster fast upload, local preview by default |
 | `clean_files` | Protected junk cleanup |
 | `bd_pic_envs` | PIC environment-image build |
 | `bd_pic_images` | PIC program-image build |

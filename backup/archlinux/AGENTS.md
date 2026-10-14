@@ -50,6 +50,29 @@ repository-root instructions. Changes confined here use
   privilege boundaries, credential restoration, or backup replacement require
   explicit authorization and prominent handoff notes.
 
+## Rayfile Snapshot
+
+- Keep the official client under `~/.local/share/rayfile-runtime` and its
+  forwarding launcher at `~/.local/bin/rayfile-c`; preserve the current working
+  directory and arguments. Do not use the vendor `/usr/local` installer.
+- `rayfile_state.py` owns installation, verification, backup, staging and
+  restoration. Installation pins the reviewed archive and binary hashes;
+  a changed download requires a new review, never a checksum bypass.
+- Snapshot only the managed runtime, launcher and manifests. Native
+  `~/.config/Raysync` logs, credentials, research data and unfinished transfers
+  remain local and outside the archive. Do not move or clear them on restore.
+- Keep the exact ignore exception for `data/rayfile.tar.gz`. Stage both archive
+  and helper before repository sync. Restore as the target user without a
+  download or package mutation; preserve existing runtime and launcher in a
+  unique `rayfile_restore_backup_*` directory.
+- Reject unsafe archive members, symlinks, duplicates, checksum mismatches,
+  partial installations and incompatible architectures. Retain the previous
+  snapshot on backup failure. Missing optional snapshots in old backups are
+  an explicit skip, never a request to download the latest release.
+- Version checks must use only `--version`. Distinguish observed log locations
+  from static temporary-file names; resume-file paths and resume success require
+  an authorized real transfer. Do not invent a database or redirect state.
+
 ## Validation
 
 - Run `bash -n` on each changed shell script.
@@ -65,6 +88,9 @@ repository-root instructions. Changes confined here use
   Cover different old versions, edited caches, safe archive extraction,
   Stow deployment, failed builds and retained safety backups. Do not write
   into live configuration, plugin directories or protected payloads as a test.
+- Validate Rayfile archive round trips, preservation and rollback with its
+  real binary and temporary `--home` directories. Do not invoke the full
+  backup/restore pipeline merely to test this helper.
 
 <!-- research-workflow:policy:start -->
 <!-- digest: 53b828bcd3473143cd53c8eb3790393d6fec47f065abe2b14e0e167f32b593b7 -->

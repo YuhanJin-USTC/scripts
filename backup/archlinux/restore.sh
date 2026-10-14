@@ -291,15 +291,27 @@ if [ ! -r "$BACKUP_ROOT/data/nvim.tar.gz" ]; then
   exit 1
 fi
 NVIM_STAGE=$(mktemp -d)
+RAYFILE_STAGE=""
 cleanup_restore_tmp() {
   [ -z "${SECURE_TMP_DIR:-}" ] || CODEX_TEMP_CLEANUP=1 rm -rf -- "$SECURE_TMP_DIR"
+  [ -z "$RAYFILE_STAGE" ] || CODEX_TEMP_CLEANUP=1 rm -rf -- "$RAYFILE_STAGE"
   CODEX_TEMP_CLEANUP=1 rm -rf -- "$NVIM_STAGE"
 }
 trap cleanup_restore_tmp EXIT
 cp "$BACKUP_ROOT/data/nvim.tar.gz" "$NVIM_STAGE/snapshot.tar.gz"
 cp "$SCRIPT_DIR/nvim_state.py" "$SCRIPT_DIR/nvim_plugins.lua" "$NVIM_STAGE/"
 
-step "1/14" "Restore system configurations."
+if [ -e "$BACKUP_ROOT/data/rayfile.tar.gz" ] || [ -L "$BACKUP_ROOT/data/rayfile.tar.gz" ]; then
+  if [ ! -f "$BACKUP_ROOT/data/rayfile.tar.gz" ] || [ -L "$BACKUP_ROOT/data/rayfile.tar.gz" ]; then
+    status ERROR "rayfile.tar.gz must be a regular file."
+    exit 1
+  fi
+  RAYFILE_STAGE=$(mktemp -d)
+  cp "$BACKUP_ROOT/data/rayfile.tar.gz" "$RAYFILE_STAGE/snapshot.tar.gz"
+  cp "$SCRIPT_DIR/rayfile_state.py" "$RAYFILE_STAGE/"
+fi
+
+step "1/15" "Restore system configurations."
 if [ -f "$BACKUP_ROOT/data/sys_config.tar.gz" ]; then
   backup_existing_from_tar "$BACKUP_ROOT/data/sys_config.tar.gz" /
   tar -xzf "$BACKUP_ROOT/data/sys_config.tar.gz" -C /
@@ -308,7 +320,7 @@ else
   status SKIP "sys_config.tar.gz not found."
 fi
 
-step "2/14" "Configure the system locale."
+step "2/15" "Configure the system locale."
 if grep -q "^#en_US.UTF-8 UTF-8" /etc/locale.gen; then
   sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
   locale-gen
@@ -318,7 +330,7 @@ else
   status SKIP "Locale is already configured."
 fi
 
-step "3/14" "Initialize the keyring and install base packages."
+step "3/15" "Initialize the keyring and install base packages."
 if [ ! -d "/etc/pacman.d/gnupg" ]; then
   pacman-key --init
   pacman-key --populate archlinux
@@ -329,7 +341,7 @@ fi
 update_keyring_with_retry
 pacman_upgrade_and_install base-devel git stow sudo wget tar openssh gnupg python
 
-step "4/14" "Configure target user and privileges."
+step "4/15" "Configure target user and privileges."
 if ! id "$TARGET_USER" &>/dev/null; then
   useradd -m -G wheel -s /bin/bash "$TARGET_USER"
   echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" >/etc/sudoers.d/wheel_nopasswd
@@ -348,7 +360,7 @@ default=$TARGET_USER
 EOF
 fi
 
-step "5/14" "Migrate restore scripts and data."
+step "5/15" "Migrate restore scripts and data."
 if [[ "$BACKUP_ROOT" != "$TARGET_HOME"* ]]; then
   printf '%s\n' "Migrating restore payload to $TARGET_HOME."
   TARGET_BACKUP_ROOT="$TARGET_HOME/backup/archlinux"
@@ -365,7 +377,13 @@ mkdir "$NVIM_STAGE/input"
 python3 "$NVIM_STAGE/nvim_state.py" stage "$NVIM_STAGE/snapshot.tar.gz" "$NVIM_STAGE/input"
 chown -R "$TARGET_USER:$TARGET_USER" "$NVIM_STAGE"
 
-step "6/14" "Restore home configurations."
+if [ -n "$RAYFILE_STAGE" ]; then
+  mkdir "$RAYFILE_STAGE/input"
+  python3 -B "$RAYFILE_STAGE/rayfile_state.py" stage "$RAYFILE_STAGE/snapshot.tar.gz" "$RAYFILE_STAGE/input"
+  chown -R "$TARGET_USER:$TARGET_USER" "$RAYFILE_STAGE"
+fi
+
+step "6/15" "Restore home configurations."
 if [ -f "$BACKUP_ROOT/data/home_config.tar.gz" ]; then
   backup_existing_from_tar "$BACKUP_ROOT/data/home_config.tar.gz" "$TARGET_HOME"
   tar -xzf "$BACKUP_ROOT/data/home_config.tar.gz" -C "$TARGET_HOME"
@@ -379,7 +397,7 @@ else
   status SKIP "home_config.tar.gz not found."
 fi
 
-step "7/14" "Restore sensitive credentials."
+step "7/15" "Restore sensitive credentials."
 if [ -f "$BACKUP_ROOT/data/secure_data.tar.gz.gpg" ]; then
   echo -n "  -> Enter GPG passphrase for credential decryption: "
   read -s GPG_PASS
@@ -413,7 +431,7 @@ else
   status SKIP "No secure data archive found."
 fi
 
-step "8/14" "Install packages from Pacman."
+step "8/15" "Install packages from Pacman."
 PKG_LIST_DIR="$BACKUP_ROOT/pkg_lists"
 if [ -f "$PKG_LIST_DIR/pkglist-pacman.txt" ]; then
   pacman_install_list "$PKG_LIST_DIR/pkglist-pacman.txt"
@@ -422,7 +440,7 @@ else
   exit 1
 fi
 
-step "9/14" "Deploy the AUR helper."
+step "9/15" "Deploy the AUR helper."
 su -s /bin/bash "$TARGET_USER" <<EOF
 set -e
 export http_proxy="$PROXY_URL"
@@ -441,7 +459,7 @@ else
 fi
 EOF
 
-step "10/14" "Install packages from the AUR."
+step "10/15" "Install packages from the AUR."
 if [ -f "$PKG_LIST_DIR/pkglist-aur.txt" ]; then
   AUR_PKGS=$(grep -v '^#' "$PKG_LIST_DIR/pkglist-aur.txt" | grep -vwE 'yay|yay-bin' | tr '\n' ' ' | xargs)
 
@@ -460,7 +478,7 @@ else
   exit 1
 fi
 
-step "11/14" "Restore repositories and deploy Stow packages."
+step "11/15" "Restore repositories and deploy Stow packages."
 if [ ! -r "$GITHUB_SSH_KEY" ]; then
   status ERROR "GitHub SSH key was not restored at $GITHUB_SSH_KEY."
   exit 1
@@ -605,7 +623,7 @@ case "$SCRIPT_DIR/" in
 esac
 EOF
 
-step "12/14" "Restore the locked Neovim environment."
+step "12/15" "Restore the locked Neovim environment."
 su -s /bin/bash "$TARGET_USER" <<EOF
 set -e
 export http_proxy="$PROXY_URL"
@@ -616,7 +634,15 @@ unset NVIM_APPNAME XDG_CONFIG_HOME XDG_DATA_HOME VIMRUNTIME
 python3 "$NVIM_STAGE/nvim_state.py" restore "$NVIM_STAGE/input" "$NVIM_STAGE/nvim_plugins.lua"
 EOF
 
-step "13/14" "Restore sensitive application configurations."
+step "13/15" "Restore the locked Rayfile client."
+if [ -n "$RAYFILE_STAGE" ]; then
+  sudo -u "$TARGET_USER" python3 -B "$RAYFILE_STAGE/rayfile_state.py" \
+    restore "$RAYFILE_STAGE/input" --home "$TARGET_HOME"
+else
+  status SKIP "No Rayfile snapshot found; existing client and transfer state retained."
+fi
+
+step "14/15" "Restore sensitive application configurations."
 if [ -n "${SECURE_TAR_TMP:-}" ] && [ -f "$SECURE_TAR_TMP" ]; then
   restore_sensitive_file "$SECURE_TAR_TMP" ".config/rclone/rclone.conf" 600
   restore_sensitive_file "$SECURE_TAR_TMP" ".codex/.env" 600
@@ -624,7 +650,7 @@ else
   status SKIP "No decrypted sensitive archive is available."
 fi
 
-step "14/14" "Restore the default shell configuration."
+step "15/15" "Restore the default shell configuration."
 SHELL_FILE="$BACKUP_ROOT/data/default_shell.txt"
 
 if [ -f "$SHELL_FILE" ]; then

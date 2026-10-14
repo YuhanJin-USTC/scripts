@@ -44,7 +44,7 @@ usage() {
   printf '%s\n' \
     "Usage: $0" \
     "" \
-    "Backup Arch Linux WSL package lists, selected configs, credentials, Neovim, and Git state." \
+    "Backup Arch Linux WSL packages, configs, credentials, Neovim, Rayfile, and Git state." \
     "" \
     "Options:" \
     "  -h, --help  Show this help."
@@ -56,7 +56,7 @@ print_header() {
   echo ""
   field "Target" "$BACKUP_ROOT"
   field "Mode" "run"
-  field "Rule" "package lists + selected config archives + locked Neovim"
+  field "Rule" "package lists + selected config archives + locked Neovim and Rayfile"
   echo ""
 }
 
@@ -75,13 +75,16 @@ mkdir -p "$PKG_LIST_DIR" "$DATA_DIR"
 
 print_header
 
-step "1/8" "Back up the locked Neovim environment."
+step "1/9" "Back up the locked Neovim environment."
 python3 "$SCRIPT_DIR/nvim_state.py" backup "$DATA_DIR/nvim.tar.gz"
 
-step "2/8" "Back up Pacman package list."
+step "2/9" "Back up the locked Rayfile client."
+python3 -B "$SCRIPT_DIR/rayfile_state.py" backup "$DATA_DIR/rayfile.tar.gz"
+
+step "3/9" "Back up Pacman package list."
 pacman -Qqen >"$PKG_LIST_DIR/pkglist-pacman.txt"
 
-step "3/8" "Back up AUR package list."
+step "4/9" "Back up AUR package list."
 pacman -Qqem >"$PKG_LIST_DIR/pkglist-aur.txt"
 
 if grep -q "^topiary$" "$PKG_LIST_DIR/pkglist-aur.txt"; then
@@ -89,7 +92,7 @@ if grep -q "^topiary$" "$PKG_LIST_DIR/pkglist-aur.txt"; then
   status OK "Replaced 'topiary' with 'topiary-bin' to avoid slow compilation."
 fi
 
-step "4/8" "Archive credentials and global Git configuration."
+step "5/9" "Archive credentials and global Git configuration."
 SENSITIVE_PATHS=()
 [ -d "$HOME/.ssh" ] && SENSITIVE_PATHS+=(".ssh")
 [ -d "$HOME/.gnupg" ] && SENSITIVE_PATHS+=(".gnupg")
@@ -122,7 +125,7 @@ else
   status SKIP "No credentials or global Git configuration found to archive."
 fi
 
-step "5/8" "Archive home configuration files."
+step "6/9" "Archive home configuration files."
 HOME_CONFIGS=()
 for path in .bashrc .bash_profile .bash_logout AGENTS.md; do
   [ -e "$HOME/$path" ] && HOME_CONFIGS+=("$path")
@@ -135,7 +138,7 @@ else
   status SKIP "No home configurations found to archive."
 fi
 
-step "6/8" "Archive system configuration files."
+step "7/9" "Archive system configuration files."
 SYS_CONFIGS=()
 for path in \
   etc/pacman.conf \
@@ -154,11 +157,11 @@ else
   status SKIP "No system configurations found to archive."
 fi
 
-step "7/8" "Archive default shell configuration."
+step "8/9" "Archive default shell configuration."
 getent passwd "$USER" | cut -d: -f7 >"$DATA_DIR/default_shell.txt"
 status OK "Default shell ($(cat "$DATA_DIR/default_shell.txt")) recorded."
 
-step "8/8" "Check Git state of core directories."
+step "9/9" "Check Git state of core directories."
 CHECK_DIRS=(
   "$DOTFILES_DIR"
   "$SCRIPTS_DIR"

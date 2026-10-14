@@ -27,6 +27,27 @@ owner.
 - A real Data download or synchronization requires an explicit request. Record
   completeness evidence in the initiating writable work unit, never in Data.
 
+## Fast Transfer
+
+- `fast_cluster2windows.nu` and `fast_windows2cluster.nu` retain the existing
+  Nushell script and terminal-output style. Their aliases are `fclst2win`
+  and `fwin2clst` in the Stow-managed Nushell configuration.
+- Fast-transfer preview is local-only and must not run Rayfile, read tokens,
+  connect to a server or create destination directories. Only `--run` transfers;
+  reject conflicting modes and propagate nonzero client exit codes.
+- Keep verified endpoints in the script host tables. Portal paths are not SSH
+  paths; do not infer another cluster's settings or map its SSH home to Rayfile.
+- Preserve the user-selected rename policy for both directions. Do not add
+  overwrite, append, deletion or SSH preparation. Directory paths retain native
+  Rayfile semantics, not an assumed rsync trailing-slash equivalence.
+- Read tokens at the hidden run-time prompt or from `RAYFILE_TOKEN`; never
+  persist them or print them in command previews. Do not reuse sample tokens.
+- Reuse the existing upload exclusion file with an explicit `--all-files`
+  bypass. Merge native wildcard patterns into one semicolon-separated `-exd`;
+  repeated `-exd` options replace prior patterns. Prefix/suffix inclusion is
+  unsupported by the reviewed client and must not silently become an all-files
+  transfer.
+
 ## Validation
 
 - Run `nu --ide-check 100` on each changed Nushell file.
@@ -35,6 +56,10 @@ owner.
 - Use only task-created temporary directories for rule fixtures.
 - Do not connect to a cluster or NAS for routine validation. Even an rsync dry
   run may read external state and requires an explicitly scoped task.
+- Validate fast-transfer argument construction, redaction, preview side effects
+  and failure propagation with temporary local fixtures. Native option checks
+  must be isolated from external networks and real credentials. Keep real-server
+  filtering, naming and transfer-success claims unverified until tested.
 
 <!-- research-workflow:policy:start -->
 <!-- digest: 53b828bcd3473143cd53c8eb3790393d6fec47f065abe2b14e0e167f32b593b7 -->
