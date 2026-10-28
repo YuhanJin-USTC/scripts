@@ -38,6 +38,7 @@ tools required by the workflow being used.
 | Container builds | Apptainer or Singularity, `sudo`, configured source and image paths |
 | PIC runs | Apptainer and the configured SIF images |
 | Cluster Jupyter sessions | Bash, OpenSSH, Python 3, curl, `cmd.exe`, Slurm, Singularity 3.7.3, and the configured Jupyter SIF |
+| MATLAB Figure Browser | Bash, Node 26, the existing app build, and WSL browser integration |
 | NAS and cluster transfer | `rsync`, OpenSSH, configured mounts and SSH aliases |
 | Cluster fast transfer | Reviewed `rayfile-c`, verified portal endpoint and operation-specific token |
 | Arch backup and restore | `tar`, GPG, Git, Stow, Arch package tools |
@@ -63,6 +64,7 @@ any command.
 | Container image builders | **Real build** | Add `--dry-run` to preview |
 | PIC image smoke tests | **Real test** | Add `--dry-run` to preview |
 | Cluster Jupyter lifecycle | **Real** | Use explicit `start`, `connect`, `status`, or `stop` |
+| MATLAB Figure Browser | **Real, foreground** | Start or reuse the app; `--no-open` suppresses browser launch |
 | Backup, restore, key transfer, Git update, PIC run, ASR/MT | **Real** | No dry run |
 
 A preview can still read external state. NAS and cluster rsync previews, iWAN
@@ -97,7 +99,7 @@ Important boundaries:
 │   └── post_process/           # Jupyter post-processing image builder
 ├── clean/                      # Protected junk cleanup
 ├── process/                    # ASR, translation, and subtitle burn-in
-├── run/                        # PIC and cluster Jupyter runtimes
+├── run/                        # PIC, cluster Jupyter, and local app runtimes
 ├── sync/                       # NAS and cluster transfer workflows
 ├── transfer/                   # Cluster SSH-key deployment
 └── update/                     # Arch, iWAN, and Git update workflows
@@ -108,7 +110,7 @@ Detailed guides:
 - [Arch backup and restore](backup/README.md)
 - [Container builds](build_containers/README.md)
 - [ASR and media processing](process/README.md)
-- [PIC and Jupyter runs](run/README.md)
+- [PIC, Jupyter, and local app runs](run/README.md)
 - [NAS and cluster sync](sync/README.md)
 - [Arch, iWAN, and Git updates](update/README.md)
 
@@ -142,11 +144,16 @@ The corresponding aliases live in
 | `run_epoch_1d`, `run_epoch_2d`, `run_epoch_3d` | EPOCH runners |
 | `run_smilei`, `run_smilei_spin` | Smilei runners |
 | `run_jupyter` | Slurm Jupyter session lifecycle |
+| `run_matlab_browser` | Local MATLAB Figure Browser, opens the browser by default |
 | `update_iwan` | iWAN route update |
-| `update_git` | Publish local changes to the matching GitHub repository |
+| `update_git` | Publish `main` through configured `origin`; other branches are refused |
 
 `update_git` replaces the old `git_update` alias. The
 `bd_post_process_images` alias is new.
+
+Tool_Project changes use short feature branches and reviewed pull requests.
+The direct-main `update_git` helper is not that workflow; it stages every file
+and requires an explicit publication request. See [Git updates](update/README.md#github-repository-update).
 
 ## Quick Reference
 
@@ -159,6 +166,7 @@ bash backup/archlinux/restore.sh --help
 nu process/asr_mt.nu --help
 bash run/run_pic.sh --help
 bash run/run_jupyter.sh --help
+bash run/run_matlab_browser.sh --help
 
 # Preview modes; external reads may still occur
 bash update/update_archlinux.sh

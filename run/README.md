@@ -1,7 +1,8 @@
-# Compute Runs
+# Runtime Launchers
 
-This domain contains local PIC launchers and the WSL controller for scheduled
-JupyterLab sessions on configured clusters.
+This domain contains local PIC launchers, the WSL controller for scheduled
+JupyterLab sessions on configured clusters, and the local Figure_Browser
+entry point.
 
 ## PIC Runs
 
@@ -98,6 +99,38 @@ removed when the job exits; private logs remain for diagnosis. Jupyter keeps
 token authentication enabled and only the local side of the tunnel is exposed
 to the browser.
 
+## Figure_Browser
+
+Run from any directory in Nushell:
+
+```nu
+run_matlab_browser
+run_matlab_browser --no-open
+run_matlab_browser --help
+```
+
+The alias calls `run_matlab_browser.sh`, which forwards to
+`/home/yuhanjin/Tool_Project/Figure_Browser/start.sh`. The app path is explicit in
+`APP_DIR` near the top of the wrapper. Use the existing Arch WSL environment
+with Node 26 and an already configured, complete app build. The public
+`run_matlab_browser` alias is retained after the project directory rename.
+
+The command opens the browser by default. `--open` is also accepted;
+`--no-open` takes precedence even when both flags are supplied. A new instance
+runs in the foreground: keep its terminal open and press Ctrl-C to stop it.
+A compatible existing instance is reused and the new command exits; the
+original terminal continues to own that service.
+
+The wrapper preserves the app launcher's exit status and signal handling.
+It does not install packages, build the app, repair locks, stop an existing
+service, or manage a background process. An incompatible port owner remains
+running and the app reports the error.
+
+The alias lives in
+`/home/yuhanjin/dot_files/nushell/.config/nushell/config.nu`. New Nushell
+sessions load it through the existing configuration link; no Stow operation is
+needed. This entry does not add a Bash alias.
+
 ## Validation
 
 Run:
@@ -106,7 +139,9 @@ Run:
 bash -n run/run_pic.sh
 bash -n run/run_jupyter.sh
 bash -n run/jupyter_job.sh
+bash -n run/run_matlab_browser.sh
 bash run/run_jupyter.sh --help
+bash run/run_matlab_browser.sh --help
 ```
 
 Inspect target selection, argument guards, image checks, command construction,
@@ -114,3 +149,8 @@ bind paths, Job-ID ownership checks, and cleanup paths statically. Do not launch
 Apptainer, MPI, a PIC code, SSH, Slurm, JupyterLab, or a browser merely to
 validate an edit. A live Jupyter check requires explicit authorization for the
 cluster, resource request, remote writes, browser launch, and cleanup.
+
+For the Figure Browser wrapper, inspect argument forwarding and use temporary
+synthetic entry points to check paths, exit status, and signals. A live start or
+browser-opening reuse check requires explicit authorization; never stop an
+existing service as part of wrapper validation.

@@ -29,19 +29,24 @@ event owner.
 
 ## GitHub Update
 
-- `update_git.nu` is real-only. It may initialize a repository, verify a
-  remote, add `origin`, stage all files, commit, rename the branch to `main`,
-  and push.
+- `update_git.nu` is real-only. It may initialize a repository on `main`, verify
+  a remote, add `origin`, stage all files, commit and push `main`.
 - Never run it unless the user requests Git publication for the exact target
   and accepts the local and remote mutations.
-- Preserve the configured account, folder-derived repository name, optional
-  message, clean-tree handling, and visible remote target.
+- Use an existing `origin` before deriving a repository from the directory
+  name. Preserve the configured account as the no-origin fallback, optional
+  message, clean-tree handling and visible remote target.
+- Refuse existing non-main branches and detached HEAD before network access or
+  mutation. Never rename an existing branch. Feature work uses reviewed PRs,
+  not this direct-main publication helper.
 - Do not create a remote repository automatically.
 
 ## Validation
 
 - Run `bash -n update_archlinux.sh` and `bash -n update_iwan_routes.sh`.
 - Run `nu --ide-check 100 update_git.nu`.
+- Check origin selection, branch guards and failure propagation with a fake
+  Git executable in owned temporary fixtures; never publish for validation.
 - Parse the PowerShell source without executing it.
 - Review argument handling, mode guards, route ownership/rollback, Git mutation
   order, and external exit propagation statically.
