@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_DIR="/home/yuhanjin/Tool_Project/Figure_Browser"
+APP_DIR="$HOME/Tool_Project/Figure_Browser"
 
 usage() {
   printf '%s\n' \

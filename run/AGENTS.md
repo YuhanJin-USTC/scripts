@@ -52,8 +52,9 @@ owner.
 ## Figure Browser Runtime Invariants
 
 - `run_matlab_browser.sh` is the Nushell entry for Figure_Browser at
-  `/home/yuhanjin/Tool_Project/Figure_Browser` (source root `matlab_html`).
-  Keep the public alias and explicit `APP_DIR`; invoke `start.sh` with `exec bash`.
+  `$HOME/Tool_Project/Figure_Browser` (source root `matlab_html`).
+  Read HOME without changing it; keep the public alias and explicit `APP_DIR`.
+  Do not discover paths or read research metadata; invoke `start.sh` with `exec bash`.
 - Preserve `-h`/`--help`, `--open`, and `--no-open`. Parse help and invalid
   options before external reads; open the browser by default and let
   `--no-open` take precedence.
