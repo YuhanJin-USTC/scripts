@@ -110,8 +110,10 @@ run_matlab_browser --help
 ```
 
 The alias calls `run_matlab_browser.sh`, which forwards to
-`/home/yuhanjin/Tool_Project/Figure_Browser/start.sh`. The app path is explicit in
-`APP_DIR` near the top of the wrapper. Use the existing Arch WSL environment
+`$HOME/Tool_Project/Figure_Browser/start.sh`. The explicit `APP_DIR` reads the
+current user's HOME without changing the environment. It does not search for
+directories or read Research Workflow metadata; keep it aligned with the
+device's verified checkout. Use the existing Arch WSL environment
 with Node 26 and an already configured, complete app build. The public
 `run_matlab_browser` alias is retained after the project directory rename.
 
