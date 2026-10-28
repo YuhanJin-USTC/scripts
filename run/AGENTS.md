@@ -49,10 +49,28 @@ owner.
   exact removal commands with `CODEX_TEMP_CLEANUP=1`. Preserve private logs for
   diagnosis and never touch research data.
 
+## Figure Browser Runtime Invariants
+
+- `run_matlab_browser.sh` is the Nushell entry for Figure_Browser at
+  `/home/yuhanjin/Tool_Project/Figure_Browser` (source root `matlab_html`).
+  Keep the public alias and explicit `APP_DIR`; invoke `start.sh` with `exec bash`.
+- Preserve `-h`/`--help`, `--open`, and `--no-open`. Parse help and invalid
+  options before external reads; open the browser by default and let
+  `--no-open` take precedence.
+- Keep new instances in the foreground and leave instance reuse, build
+  compatibility, locks, exit status, and signals to the app launcher.
+- Do not install, rebuild, repair locks, stop an existing service, or add
+  background management through this wrapper. Keep the app and its data outside
+  this script repository's write scope.
+
 ## Validation
 
 - Run `bash -n run_pic.sh`.
 - Run `bash -n run_jupyter.sh` and `bash -n jupyter_job.sh`.
+- Run `bash -n run_matlab_browser.sh`; check help and invalid arguments without
+  invoking the app, then use temporary fixtures for paths, exit status, and
+  signals. A live app start or browser-opening reuse check requires explicit
+  authorization.
 - Inspect help, target/input/MPI guards, image checks, command construction,
   bind paths, and output placement statically.
 - Inspect cluster selection, resource/path guards, Job-ID ownership checks,

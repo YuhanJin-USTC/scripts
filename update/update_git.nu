@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-# Sync a local directory to the matching GitHub repository.
+# Publish main through its configured remote.
 def status-label [label: string] {
   match $label {
     "OK" => $"(ansi green)OK(ansi reset)"
@@ -54,7 +54,7 @@ def print-header [target: string remote_url: string] {
   print $"(ansi cyan)GitHub sync(ansi reset)"
   field "Target" $target
   field "Mode" "run"
-  field "Rule" "init if needed, commit changes, push main"
+  field "Rule" "main only, use origin, commit changes, push main"
   field "Remote" $remote_url
   print ""
 }
@@ -77,33 +77,51 @@ def main [
 
   check-command "git"
 
+  cd $target
+
   let folder_name = ($target | path basename)
   let github_user = "YuhanJin-USTC"
-  let remote_url = $"https://github.com/($github_user)/($folder_name).git"
+  let existing_repo = (".git" | path exists)
+  let current_remotes = if $existing_repo {
+    git-output ["remote"] "Remote lookup" | lines
+  } else {
+    []
+  }
+  let remote_url = if "origin" in $current_remotes {
+    git-output ["remote" "get-url" "origin"] "Origin lookup"
+  } else {
+    $"https://github.com/($github_user)/($folder_name).git"
+  }
 
   print-header $target $remote_url
+
+  if $existing_repo {
+    let branch = (do { ^git symbolic-ref --quiet --short HEAD } | complete)
+    if $branch.exit_code != 0 or ($branch.stdout | str trim) != "main" {
+      status "ERROR" "Publication requires the main branch; detached HEAD and other branches are refused."
+      print --stderr "  Review and switch branches explicitly; use a pull request for feature work."
+      exit 1
+    }
+  }
 
   # Validate the remote before changing local Git state.
   field "Check remote" $remote_url
   let remote_check = (do { ^git ls-remote $remote_url } | complete)
   if $remote_check.exit_code != 0 {
-    status "ERROR" $"Repository '($folder_name)' not found on GitHub account ($github_user)."
-    print --stderr "  Create the repo on GitHub first or check the folder name."
+    status "ERROR" "The selected remote is unavailable."
+    print --stderr "  Check origin and access, or create the named GitHub repository first."
     exit $remote_check.exit_code
   }
   status "OK" "Remote repository exists."
 
-  cd $target
-
   # Initialize the local repository only when needed.
-  if not (".git" | path exists) {
+  if not $existing_repo {
     print "Initializing local Git repository."
-    run-git ["init"] "Git initialization"
+    run-git ["init" "--initial-branch=main"] "Git initialization"
     status "OK" "Local Git repository initialized."
   }
 
   # Attach origin when the repository has no remote configured.
-  let current_remotes = (git-output ["remote"] "Remote lookup" | lines)
   if "origin" not-in $current_remotes {
     run-git ["remote" "add" "origin" $remote_url] "Remote setup"
     status "OK" $"Added remote origin: ($remote_url)."
@@ -120,13 +138,11 @@ def main [
     return
   }
 
-  print "[1/4] Staging changes."
+  print "[1/3] Staging changes."
   run-git ["add" "."] "Git add"
-  print "[2/4] Creating commit."
+  print "[2/3] Creating commit."
   run-git ["commit" "-m" $commit_msg] "Git commit"
-  print "[3/4] Updating main branch."
-  run-git ["branch" "-M" "main"] "Branch update"
-  print "[4/4] Pushing main branch."
+  print "[3/3] Pushing main branch."
   run-git ["push" "-u" "origin" "main"] "Git push"
   status "OK" "GitHub update completed."
 }
