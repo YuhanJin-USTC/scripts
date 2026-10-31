@@ -8,47 +8,93 @@ repository-root instructions. Changes confined here use
 
 ## Protected State
 
-- `backup.sh` is real-only. It rewrites package lists and archives, handles
-  credentials through GPG, records the default shell, and inspects Git state.
-- `restore.sh` is a root-only disaster-recovery pipeline. It restores system
-  and home configuration, installs packages, restores credentials, creates or
-  changes users, runs Stow, and force-syncs configured repositories.
-- Treat `data/`, encrypted archives, `pkg_lists/`, default-shell records,
-  SSH/GPG material, and application credentials as protected user content.
-- Keep the home archive and restore path aligned, including the optional
-  home-level `/home/yuhanjin/AGENTS.md`.
-- Preserve timestamped safety backups and the exclusion of `.ssh/config`,
-  which is owned by dot_files/Stow. Never remove safety backups automatically.
-- Keep safety directories unique and preserve repeated backups. Do not move
-  existing real parent directories when only archive members are being restored.
-- Preflight all Stow packages together. Preserve matching links, back up the
-  explicit Git/SSH/rclone targets, and restore absent targets on backup or Stow
-  failure. Keep completed links and their original backups after partial failure.
-- Stage sensitive application files before replacing their destination. Preserve
-  matching archived symbolic links; reject missing targets and unsupported types.
-  Never extract link-only members as file contents or write through parent links.
-- Do not force-sync the `scripts` checkout containing the running restore script.
-  Report the skipped synchronization explicitly.
-- Keep temporary restore paths unique and clean them on success and failure.
-  Cleanup may target only temporary paths created by that invocation.
-- Keep the Neovim snapshot self-contained: configuration, original lockfile,
-  plugin URLs, parser names, official fixed-version runtime and checksums.
-  Stage the snapshot and helpers before repository sync. Preserve effective
-  and repository Neovim contents before resetting their Stow source.
-  Keep an exact Git ignore exception for `data/nvim.tar.gz`; do not expose
-  other archives or temporary payloads through a broad exception.
-- Force Neovim to the snapshot after preserving existing configuration,
-  plugin/parser trees, runtime and launcher. Target version differences and
-  local plugin edits must not block matching. Do not downgrade Arch packages.
-- Restore the bundled executable and its VIMRUNTIME together. Restore plugin
-  commits before reading their APIs; keep the lockfile unchanged. Never use
-  Lazy sync/clean/update or load the user's startup callbacks during recovery.
-- Wait for native builds and parser installation, check their actual results,
-  and verify parser revisions and queries in a fresh Neovim process. Keep
-  external LSP/formatter binaries outside the plugin-version guarantee.
-- Changes to forced Git synchronization, package installation, proxy use,
-  privilege boundaries, credential restoration, or backup replacement require
-  explicit authorization and prominent handoff notes.
+- `backup.sh [--preview]` remains real by default and creates a unique
+  `data/sets/<UTC+uuid>` generation. Keep INCOMPLETE until every component and
+  manifest/hash check passes, then mark COMPLETE. Never overwrite old sets,
+  package lists or archives; failed sets remain available for diagnosis.
+- `restore.sh [--set PATH|--legacy PATH] [--preview]` remains real by default.
+  Without an exact set, prompt for a complete generation; never infer latest.
+- Keep new `data/sets/` outside Git. Existing legacy payloads, encrypted
+  archives, package lists, shell records, SSH/GPG and application credentials
+  remain protected; NAS archive rules are unchanged.
+- Before deployment, stage and validate every selected archive: decryption,
+  internal hashes, safe member types/links, architecture and free space. Run
+  the staged Research Workflow compatibility-only doctor against its matching
+  staged Store before writing any user destination. Compatibility is not full
+  framework acceptance and never performs Store migration.
+- Treat Research Workflow metadata/policy as portable authority: skip identical
+  bytes/members, permit a complete snapshot only into empty authority, and refuse
+  any populated difference before high-impact writes. Recheck just before import;
+  never overwrite populated authority or choose journal heads. Merge/validate
+  requires its separate authorized workflow and stopped framework writers.
+- Show actual destination differences and obtain each exact confirmation before
+  replacement. Preserve unique safety backups, home-level AGENTS and unrelated
+  parent directories. Keep `.ssh/config` owned by dot_files/Stow.
+- Confirm and preserve real archived directory mode/owner changes separately,
+  without moving their contents. Mark synthetic staging parents; never copy
+  temporary 0700 permissions onto unarchived parents such as `/etc`.
+- Preflight all Stow packages together. Compare encrypted effective Git/rclone
+  configuration with archived Stow sources; when different, show metadata/hashes
+  and require the exact effective/repository choice, preserving both sources.
+  Reuse a choice only when set identity and actual content/link still match.
+  Preserve matching links; back up exact Git/SSH/rclone targets and restore
+  absent targets on backup or Stow failure. Keep completed links and backups.
+- Stage sensitive application files before replacement. Preserve matching
+  archived symlinks, reject missing targets/unsupported types, and never extract
+  link-only members as file contents or write through parent links. Resolve
+  archive links component by component before `..`; reject absolute/escaping
+  targets, cycles and more than 40 link expansions. Recheck staged resolution.
+- Use an independent restore runner when restoring scripts; preserve its `.git`
+  and existing protected payloads. Do not force-sync repositories during restore.
+  Missing yay requires explicit confirmation before any private temporary AUR
+  clone/build/install. No network fallback may be implicit.
+- Keep plaintext archives/manifests at 0600 inside private 0700 staging roots;
+  retain archived member modes. Remove only invocation-created temporary paths
+  with CODEX_TEMP_CLEANUP=1. Clear cleanup variables before use, register exact
+  device/inode identities and use descriptor-anchored cleanup. Refuse replaced
+  roots, symlinks or inherited environment values as cleanup authority. Preserve
+  valuable failed builds/generations and safety backups; never prune them.
+- Report every component on success, failure or interruption as verified,
+  unverified, skipped, failed or uncovered with a reason. Preserve source absence
+  reasons; do not hide incomplete work behind a final generic success.
+- Repeated recovery compares actual payloads, modes and links. Skip matching
+  Stow links, Rayfile replacement and Neovim generations while retaining their
+  required validation; version equality alone is not equivalence.
+
+## Neovim Generations
+
+- Snapshot complete format-2 config, runtime, data and actual plugin trees,
+  including `.git`, local edits, native binaries, parsers and queries. Keep
+  lockfile/spec provenance and references to external tools; those references
+  do not promise system-tool rollback. Preserve the original 22-language parser
+  coverage plus latex, recorded grammar revisions and native/site hashes. Rebuild
+  for a changed ABI inside candidates without deleting the old artifacts.
+- Keep `nvim_state.py` as the sole public lifecycle, with `nvim_plugins.lua`
+  sharing explicit startup specs and `mason_tools.py` internal only. Equivalent
+  actual active payload is revalidated without creating or activating a new
+  generation; otherwise restore imports an offline candidate. Prepare/restore
+  never activate. Show the exact activation command for separate confirmation;
+  no Lazy sync/clean/update or missing-content download during offline import.
+- Keep the launcher bound to one active generation per invocation. Activation
+  checks prepared source/expected-active hashes; rollback selects an accepted
+  historical generation after payload validation. Both serialize and atomically
+  switch active after fresh real validation under the lock. Preserve previous
+  and failed generations without pruning.
+- Jukit uses `/usr/bin/python3` and `/usr/bin/ipython3`, backed by Arch
+  `python-pynvim`, `ipython`, `python-matplotlib`, `python-pylatexenc`; do not
+  recreate the broken `~/base` path or invent a venv. Core acceptance requires
+  real provider, cell split/merge/run, saved output and conversion checks.
+- Rebuild clangd, pylsp, clang-format and stylua at the original
+  `~/.local/share/nvim/mason` locations from recorded receipt/source/version,
+  registry checksums and Python pins through official Mason APIs. Preview and
+  separately authorize network/build scope; isolate builds at the original
+  prefix, preserve old tools and publish atomically. Refuse missing exact pins
+  or sources; never fall back to latest. Matching content still needs probes.
+- Restore order is staging, selected Arch packages, pinned Mason tools, real
+  editor core validation, then separately confirmed activation. Notebook browser,
+  HTML/PDF export and terminal image backends are separate unselected features.
+- Legacy format 1 with absent plugin content is not ready. Report its limitation
+  explicitly and retain the legacy exit-3 incomplete guarantee.
 
 ## Rayfile Snapshot
 
@@ -61,8 +107,9 @@ repository-root instructions. Changes confined here use
 - Snapshot only the managed runtime, launcher and manifests. Native
   `~/.config/Raysync` logs, credentials, research data and unfinished transfers
   remain local and outside the archive. Do not move or clear them on restore.
-- Keep the exact ignore exception for `data/rayfile.tar.gz`. Stage both archive
-  and helper before repository sync. Restore as the target user without a
+- Keep the legacy ignore exception for `data/rayfile.tar.gz`; new sets remain
+  fully ignored. Stage both archive
+  and helper before any destination changes. Restore as the target user without a
   download or package mutation; preserve existing runtime and launcher in a
   unique `rayfile_restore_backup_*` directory.
 - Reject unsafe archive members, symlinks, duplicates, checksum mismatches,
@@ -82,23 +129,23 @@ repository-root instructions. Changes confined here use
 - Check Stow argument handling with the installed binary in task-created
   temporary package and target directories. Do not substitute a mock for this
   check or use user configuration as test data.
-- Never run backup, restore, package, GPG, credential, or forced Git
-  operations for routine validation.
-- Validate the Neovim helpers with temporary homes and real Neovim modules.
-  Cover different old versions, edited caches, safe archive extraction,
-  Stow deployment, failed builds and retained safety backups. Do not write
-  into live configuration, plugin directories or protected payloads as a test.
+- Never run the full backup/restore, package, GPG, credential or real Git
+  workflow for routine validation. Use isolated helper fixtures only.
+- Validate Neovim candidates with temporary homes and real modules. Cover
+  local plugin edits, safe extraction, offline import, stale/atomic activation,
+  rollback and retained failed generations. Do not write live configuration,
+  plugin directories or protected payloads as a test.
 - Validate Rayfile archive round trips, preservation and rollback with its
   real binary and temporary `--home` directories. Do not invoke the full
   backup/restore pipeline merely to test this helper.
 
 <!-- research-workflow:policy:start -->
-<!-- digest: 53b828bcd3473143cd53c8eb3790393d6fec47f065abe2b14e0e167f32b593b7 -->
+<!-- digest: 89d09a6994f49df8c13b524a2af6ad0acf361194fc848c001cb517be1ee3a44f -->
 ## Managed Research Workflow Policy
 
 - `case-confirmation`: "A Case target does not imply a Case edit. For explicit registration or simulation-definition changes, finish files/checks, show the saved preview, actually ask and await the user, then apply the exact plan. A digest is not consent; unchanged accepted definitions add no revision."
 - `external-operations`: "Do not run cluster, simulation, MATLAB, network, sync, build, or Git mutations without explicit user authorization."
-- `framework-authority`: "Use Research Workflow 0.2.3 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
+- `framework-authority`: "Use Research Workflow 0.2.4 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
 - `indexing`: "Treat SQLite and saved plans as device-local derived state. Queries may refresh the disposable index; never synchronize it or use it as authority."
 - `multi-device`: "Synchronize and check portable authority before context or any portable write after switching devices, including event-only work. Keep local TOML/device/paths, upgrade devices sequentially, and stop old metadata writers until local acceptance. External sync remains separately authorized."
 - `propagation`: "Preview pending policy semantics, exact targets and differences; obtain real user approval of the stable digest, record it through policy approve, then apply. Preserve cumulative device approvals and unmanaged AGENTS bytes; Data/Notes and body patches require exact separate scope."

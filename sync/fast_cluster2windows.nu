@@ -3,9 +3,9 @@
 # Fast-transfer host config.
 # Portal paths are separate from SSH home paths.
 let cluster_hosts = [
-  {name: "hfcluster", address: "hefei03.nscc-hf.cn", port: 65012, user: "yuhanjin", remote_root: "/"}
-  {name: "tycluster", address: "tycs1.hpccube.com", port: 65112, user: "yuhanjin", remote_root: "/"}
-  {name: "wzcluster", address: "wuzh01.hpccube.com", port: 65012, user: "yuhanjin", remote_root: "/"}
+  {name: "hfcluster", address: "hefei03.nscc-hf.cn", port: 65012, user: "yuhanjin", remote_root: "/", ssh_root: "/public/home/yuhanjin"}
+  {name: "tycluster", address: "tycs1.hpccube.com", port: 65112, user: "yuhanjin", remote_root: "/", ssh_root: "/work/home/yuhanjin"}
+  {name: "wzcluster", address: "wuzh01.hpccube.com", port: 65012, user: "yuhanjin", remote_root: "/", ssh_root: "/work/home/yuhanjin"}
 ]
 
 def status-label [status: string] {
@@ -61,186 +61,91 @@ def select-cluster [target: string] {
 }
 
 # Reject root targets and parent traversal.
-def resolve-remote-path [cluster: record remote_path: string] {
-  let clean = ($remote_path | str trim)
+def resolve-remote-path [cluster: record remote_path: string portal_path: bool] {
+  let clean = $remote_path
   let parts = ($clean | split row "/")
   if (
     ($clean in ["" "." "~"])
     or (($clean | str trim --char "/") == "")
     or ($parts | any {|part| $part in ["." ".."] })
-    or ($clean =~ '[\r\n\x00-\x1f]')
+    or ($remote_path =~ '[\x00-\x1f\x7f]')
     or ($clean | str contains '\')
   ) {
     status "ERROR" $"Refusing unsafe remote path: ($remote_path)."
     exit 1
   }
 
-  if ($clean | str starts-with "/") {
-    $clean
-  } else {
-    $"($cluster.remote_root)($clean)"
-  }
-}
-
-def exclude-patterns [rules: list<string>] {
-  mut patterns = []
-  for rule in $rules {
-    if (
-      ($rule | str trim) == ""
-      or ($rule =~ '[;\r\n\x00-\x1f]')
-      or ($rule | str starts-with "!")
-      or ($rule | str starts-with "-")
-      or ($rule | str starts-with "+")
-    ) {
-      status "ERROR" $"Unsupported exclude pattern: ($rule)."
-      exit 1
-    }
-
-    # Directory rules also match descendants.
-    if ($rule | str ends-with "/") {
-      let directory = ($rule | str trim --right --char "/")
-      if $directory == "" {
-        status "ERROR" "Refusing an empty directory exclude."
-        exit 1
-      }
-      $patterns = ($patterns | append [$directory $"*/($directory)" $"*/($directory)/*"])
-    } else {
-      $patterns = ($patterns | append $rule)
-    }
-  }
-  $patterns | uniq
-}
-
-def command-text [args: list<string>] {
-  $args | each {|arg|
-    if ($arg =~ '^[a-zA-Z0-9_./:@=+-]+$') {
-      $arg
-    } else {
-      $arg | to nuon
-    }
-  } | str join " "
-}
-
-# Read credentials only for real transfers.
-def transfer-token [] {
-  let preset = ($env.RAYFILE_TOKEN? | default "")
-  let token = if $preset != "" {
-    $preset
-  } else {
-    if not (is-terminal --stdin) {
-      status "ERROR" "Set RAYFILE_TOKEN for a non-interactive transfer."
-      exit 1
-    }
-    input --suppress-output "Fast-transfer token: "
-  }
-  if ($token | str trim) == "" or ($token =~ '[\r\n\x00]') {
-    status "ERROR" "A non-empty, single-line fast-transfer token is required."
+  let mapped = if not $portal_path and ($clean == $cluster.ssh_root or ($clean | str starts-with $"($cluster.ssh_root)/")) {
+    $clean | str substring (($cluster.ssh_root | str length)..)
+  } else { $clean }
+  let portal = if ($mapped | str starts-with "/") { $mapped } else { $"($cluster.remote_root)($mapped)" }
+  if ($portal | str trim --char "/") == "" {
+    status "ERROR" "The selected SSH home maps to the portal root; choose a directory below it."
     exit 1
   }
-  $token
-}
-
-def print-header [
-  remote_src: string
-  dest: path
-  dry_run: bool
-  rule: string
-] {
-  print ""
-  print $"(ansi cyan)Cluster fast download(ansi reset)"
-  print $"Target: ($remote_src) -> ($dest)"
-  print $"Mode: (if $dry_run { 'dry-run' } else { 'run' })"
-  print $"Rule: ($rule)"
-  print "Existing: rename"
-  if $dry_run {
-    status "DRY-RUN" "No files will be downloaded."
-  }
-  print ""
+  $portal
 }
 
 def main [
-  target: string # Cluster target: hfcluster, tycluster, or wzcluster (hf, ty, wz)
-  src: string # Remote file or directory, using the portal path
-  dest: path # Local destination directory (WSL path)
-  --exclude (-e): string = "" # Additional wildcard excludes, separated by semicolons
-  --dry-run (-n) # Preview the command without connecting, default
-  --run # download for real
+  target: string # Cluster target: hfcluster, tycluster, wzcluster (hf, ty, wz)
+  src: string # Full registered SSH path, home-relative path or absolute portal path
+  dest: path # Local destination directory
+  prefix?: string # Filename prefix glob
+  suffix?: string # Filename suffix glob
+  --exclude (-e): string = "" # Reserved; download exclusions need protocol validation
+  --dry-run (-n) # Offline preview, default
+  --portal-path # Interpret src literally in the portal namespace; bypass SSH-home mapping
+  --list # Explicit read-only native list probe; no downloads
+  --attributes # Explicit read-only native attributes probe for src; no downloads
+  --ssh-list # Explicit recursive SSH metadata selection; no token or downloads
+  --run # HF/TY/WZ: SSH metadata, Rayfile payload and verified publication; HF/TY not live-tested
 ] {
-  if $run and $dry_run {
-    status "ERROR" "Choose only one mode: --dry-run or --run."
-    exit 1
+  if ([$dry_run $list $attributes $ssh_list $run] | where {|value| $value } | length) > 1 {
+    status "ERROR" "Choose only one mode: --dry-run, --list, --attributes, --ssh-list or --run."
+    exit 2
   }
-
+  if $exclude != "" {
+    status "ERROR" "Download exclusions require verified listing metadata; use prefix and suffix."
+    exit 2
+  }
   if ($dest | str trim) == "" {
     status "ERROR" "A local destination directory is required."
-    exit 1
+    exit 2
   }
-
-  let do_dry_run = not $run
   let cluster = (select-cluster $target)
-  let src_path = (resolve-remote-path $cluster $src)
-  let dest_path = ($dest | path expand)
-  let custom_rules = if $exclude == "" { [] } else { $exclude | split row ";" | str trim }
-  let patterns = (exclude-patterns $custom_rules)
+  let clean_src = $src
+  let source = (resolve-remote-path $cluster $src $portal_path | str trim --right --char "/")
+  let destination = ($dest | path expand --no-symlink)
+  let helper = ($env.CURRENT_FILE | path dirname | path join "rayfile_download.py")
+  let p = ($prefix | default "")
+  let s = ($suffix | default "")
+  let args = ["--target" $cluster.name "--source" $source "--destination" $destination $"--prefix=($p)" $"--suffix=($s)"]
+  check-command "python3"
+  ^python3 -B $helper validate ...$args
+  if $env.LAST_EXIT_CODE != 0 { exit $env.LAST_EXIT_CODE }
 
-  if ($dest_path | path exists) and (($dest_path | path type) != "dir") {
-    status "ERROR" $"Destination is not a directory: ($dest_path)."
-    exit 1
-  }
-  if $dest_path == "/" {
-    status "ERROR" "Refusing the local root as a destination."
-    exit 1
-  }
-  check-command "rayfile-c"
-
-  let remote_src = $"($cluster.name):($src_path)"
-  let rule_label = if ($patterns | is-empty) { "all files" } else { $"exclude: ($patterns | str join ';')" }
-  print-header $remote_src $dest_path $do_dry_run $rule_label
-
-  # Keep the portal source path unchanged; rsync slash rules do not apply.
-  mut args = [
-    "-a", $cluster.address,
-    "-P", ($cluster.port | into string),
-    "-u", $cluster.user,
-    "-no-meta",
-    "-symbolic-links", "follow",
-    "-retry", "10", "-retrytimeout", "30",
-    "-o", "download", "-s", $src_path, "-d", $dest_path,
-    "-file-update", "rename"
-  ]
-
-  # Repeated -exd options replace earlier rules.
-  if not ($patterns | is-empty) {
-    $args = ($args | append ["-exd" ($patterns | str join ";")])
-  }
-
-  print "Command:"
-  print $"  rayfile-c (command-text ($args | append ['-w' '<hidden>']))"
+  let mode = if $run { "run" } else if $list { "list" } else if $attributes { "attributes" } else if $ssh_list { "ssh-list" } else { "dry-run" }
   print ""
-
-  # The client has no native dry-run mode.
-  if $do_dry_run {
-    status "OK" "Dry run completed. Add --run to download these files."
+  print $"(ansi cyan)Cluster fast download(ansi reset)"
+  print $"Target: ($cluster.name):($source) -> ($destination)"
+  print $"Mode: ($mode)"
+  print $"Rule: (if $p == '' and $s == '' { 'all files' } else { $p + '*' + $s })"
+  print $"Input: ($src)"
+  print $"Path: (if $portal_path { 'explicit portal namespace' } else if (($clean_src | str starts-with $"($cluster.ssh_root)/") or $clean_src == $cluster.ssh_root) { 'registered SSH home mapped to portal root' } else if ($clean_src | str starts-with '/') { 'absolute portal path' } else { 'relative to portal home' })"
+  print "Planned layout: preserve existing files; incoming name.1.ext on collision; inner paths retained"
+  if $mode == "dry-run" {
+    status "DRY-RUN" "Offline plan only; no token, client, server access or destination creation."
+    print "Metadata: --ssh-list explicitly reads the mapped SSH source; --list and --attributes show raw native diagnostics."
+    print "Protocol: hf/ty/wz --run share SSH metadata and Rayfile batches; only WZ has live fixture acceptance."
     return
   }
-
-  let token = (transfer-token)
-  if not ($dest_path | path exists) {
-    mkdir $dest_path
+  if $mode in ["list" "attributes"] {
+    print "Probe: raw native response for this source only; filters and local destination are not used."
   }
-
-  let final_args = ($args | append ["-w" $token])
-  # Keep native progress and report external failures.
-  let rayfile_exit_code = try {
-    ^rayfile-c ...$final_args
-    $env.LAST_EXIT_CODE
-  } catch {|err|
-    $err.exit_code? | default 1
+  if $mode == "run" {
+    print "Transfer: SSH metadata before and after; Rayfile payload; complete verification before publication."
   }
-  if $rayfile_exit_code != 0 {
-    status "ERROR" $"Cluster fast download failed with code ($rayfile_exit_code)."
-    exit $rayfile_exit_code
-  }
-
-  status "OK" "Cluster fast download completed."
+  ^python3 -B $helper $mode ...$args
+  let code = $env.LAST_EXIT_CODE
+  if $code != 0 { exit $code }
 }

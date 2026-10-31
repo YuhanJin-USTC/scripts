@@ -31,3 +31,6 @@ backup/archlinux/data/.gnupg/
 tmp/
 temp/
 .cache/
+
+# Immutable backup sets travel through the existing NAS workflow.
+backup/archlinux/data/sets/

@@ -6,13 +6,26 @@ These rules apply only under `update/` and supplement the repository-root
 instructions. Changes confined here use `root:scripts/update` as their V0
 event owner.
 
-## Arch Linux
+## Arch Linux and Editor Updates
 
-- `update_archlinux.sh` remains preview-by-default. Only `--run` may update
-  the keyring, official packages, or AUR packages.
-- Preserve the non-root guard for real mode and the separation between preview
-  queries and real package operations.
-- Do not run package queries or updates merely to validate an edit.
+- `update_archlinux.sh` remains preview-by-default. Only `--run` may mutate
+  packages or prepare an editor generation; never run it merely for validation.
+- Default scope has two stages: complete the system update, then prepare and
+  validate an isolated Neovim candidate. Preserve `--system-only` and
+  `--editor-only`; failed package queries must fail visibly.
+- Keep the non-root guard and one complete `pacman -Syu --needed archlinux-keyring`
+  transaction before AUR updates; do not introduce a standalone `-Sy`. Treat
+  reported ALPM hook errors as failures even with exit zero, and retain logs.
+  Editor failure does not roll back packages or switch the active generation.
+- Print the separate exact activation command after successful candidate
+  validation. Activation and rollback need their own `--run`; neither prepare
+  nor restore may activate implicitly. Retain failed and previous generations.
+- `nvim_state.py` is the sole public editor lifecycle; `mason_tools.py` is an
+  internal backend. Preserve the complete original parser coverage plus latex
+  (23 parsers), explicit shared specs and fresh real validation under the lock.
+- Keep Jukit on the system Python/IPython and the four selected Arch packages.
+  Pinned reconstruction of the original Mason tools is separately authorized;
+  never install external tools implicitly during startup or candidate validation.
 
 ## iWAN Routes
 
@@ -53,12 +66,12 @@ event owner.
 - Never run package, DNS, iWAN, Git, or network operations for validation.
 
 <!-- research-workflow:policy:start -->
-<!-- digest: 53b828bcd3473143cd53c8eb3790393d6fec47f065abe2b14e0e167f32b593b7 -->
+<!-- digest: 89d09a6994f49df8c13b524a2af6ad0acf361194fc848c001cb517be1ee3a44f -->
 ## Managed Research Workflow Policy
 
 - `case-confirmation`: "A Case target does not imply a Case edit. For explicit registration or simulation-definition changes, finish files/checks, show the saved preview, actually ask and await the user, then apply the exact plan. A digest is not consent; unchanged accepted definitions add no revision."
 - `external-operations`: "Do not run cluster, simulation, MATLAB, network, sync, build, or Git mutations without explicit user authorization."
-- `framework-authority`: "Use Research Workflow 0.2.3 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
+- `framework-authority`: "Use Research Workflow 0.2.4 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
 - `indexing`: "Treat SQLite and saved plans as device-local derived state. Queries may refresh the disposable index; never synchronize it or use it as authority."
 - `multi-device`: "Synchronize and check portable authority before context or any portable write after switching devices, including event-only work. Keep local TOML/device/paths, upgrade devices sequentially, and stop old metadata writers until local acceptance. External sync remains separately authorized."
 - `propagation`: "Preview pending policy semantics, exact targets and differences; obtain real user approval of the stable digest, record it through policy approve, then apply. Preserve cumulative device approvals and unmanaged AGENTS bytes; Data/Notes and body patches require exact separate scope."

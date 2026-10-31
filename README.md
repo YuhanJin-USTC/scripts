@@ -53,19 +53,20 @@ any command.
 
 | Workflow | Default | Real action |
 | --- | --- | --- |
-| `update/update_archlinux.sh` | Preview | Add `--run` |
+| `update/update_archlinux.sh` | Preview system/editor stages | Add `--run`; editor activation remains separate |
 | `update/update_iwan_routes.sh` | Preview | Exit iWAN, then add `--run` |
 | `sync/sync_files.nu` | Preview | Add `--run` |
 | `sync/windows2cluster.nu` | Preview | Add `--run` |
 | `sync/cluster2windows.nu` | Preview | Add `--run` |
-| `sync/fast_cluster2windows.nu` | Local command preview | Add `--run` |
+| `sync/fast_cluster2windows.nu` | Local filter plan | HF/TY/WZ `--run` uses SSH metadata and Rayfile payloads; only WZ has live fixture acceptance |
 | `sync/fast_windows2cluster.nu` | Local command preview | Add `--run` |
 | `clean/clean_files.nu` | Preview | Add `--run`, then type `DELETE` |
 | Container image builders | **Real build** | Add `--dry-run` to preview |
 | PIC image smoke tests | **Real test** | Add `--dry-run` to preview |
 | Cluster Jupyter lifecycle | **Real** | Use explicit `start`, `connect`, `status`, or `stop` |
 | MATLAB Figure Browser | **Real, foreground** | Start or reuse the app; `--no-open` suppresses browser launch |
-| Backup, restore, key transfer, Git update, PIC run, ASR/MT | **Real** | No dry run |
+| Arch backup and restore | **Real** | `--preview` inspects the documented subset; restore requires an exact set or interactive choice |
+| Key transfer, Git update, PIC run, ASR/MT | **Real** | No dry run |
 
 A preview can still read external state. NAS and cluster rsync previews, iWAN
 configuration reads, and DNS lookups require an explicitly scoped request and
@@ -81,8 +82,13 @@ Important boundaries:
 - Container builds use `build --force` and may replace an existing SIF.
 - Cluster Jupyter sessions use Slurm compute nodes, preserve token
   authentication, and never upload the configured SIF automatically.
-- Restore installs packages, restores credentials, runs Stow, and force-syncs
-  configured repositories.
+- Backup creates immutable complete/incomplete sets. Restore preflights staged
+  components, shows exact differences and preserves safety backups before writes;
+  it installs packages and runs Stow only with explicit confirmation, without
+  force-syncing user repositories.
+- Neovim preparation and offline restore create isolated candidates. Activation
+  and rollback are separate exact operations; previous and failed generations
+  remain available.
 - SSH key transfer overwrites fixed WSL and Windows destinations.
 - Subtitle burn-in uses FFmpeg overwrite mode for its derived output.
 
@@ -129,7 +135,7 @@ The corresponding aliases live in
 | `sync_files` | NAS synchronization |
 | `clst2win` | Cluster download |
 | `win2clst` | Cluster upload |
-| `fclst2win` | Cluster fast download, local preview by default |
+| `fclst2win` | Offline plan; HF/TY/WZ fast download with `--run`; HF/TY not live-tested |
 | `fwin2clst` | Cluster fast upload, local preview by default |
 | `clean_files` | Protected junk cleanup |
 | `bd_pic_envs` | PIC environment-image build |
@@ -137,9 +143,9 @@ The corresponding aliases live in
 | `bd_post_process_images` | EPOCH Jupyter image build |
 | `test_pic_images` | PIC image smoke test |
 | `tsf_clst_key` | Cluster SSH-key deployment |
-| `backup_archlinux` | Arch backup |
-| `restore_archlinux` | Arch restore |
-| `update_archlinux` | Arch package update |
+| `backup_archlinux` | New immutable Arch backup set; `--preview` available |
+| `restore_archlinux` | Select and preflight a backup set; `--preview` available |
+| `update_archlinux` | System update followed by editor candidate preparation |
 | `asr_mt` | ASR/translation/subtitle pipeline |
 | `run_epoch_1d`, `run_epoch_2d`, `run_epoch_3d` | EPOCH runners |
 | `run_smilei`, `run_smilei_spin` | Smilei runners |
@@ -154,6 +160,36 @@ The corresponding aliases live in
 Tool_Project changes use short feature branches and reviewed pull requests.
 The direct-main `update_git` helper is not that workflow; it stages every file
 and requires an explicit publication request. See [Git updates](update/README.md#github-repository-update).
+
+`update_archlinux` supports `--system-only` and `--editor-only`. Its editor
+stage prints a separate activation command and never switches generations
+implicitly. The shared Neovim helper also owns backup import, validation and
+rollback. Managed Markdown renders in normal mode, exposes source in insert
+mode and uses `<leader>tm`; limited Unicode math uses system `latex2text`.
+The 23 parsers preserve the original language coverage and add latex. Jukit uses
+system Python/IPython and four explicit Arch packages; the original Mason tools
+use pinned reconstruction at their original paths. See
+[editor generations and dependencies](update/README.md#arch-linux) and
+[external tools and recovery](backup/README.md#restore).
+
+Fast download accepts `hf`, `ty`, `wz` or their full cluster aliases and optional
+prefix/suffix filters. Registered SSH homes are `/public/home/yuhanjin` for hf
+and `/work/home/yuhanjin` for ty/wz. Fast download converts only the exact
+registered prefix to portal `/`; relative paths use that portal home. Other
+absolute paths retain portal meaning, and `--portal-path` selects that namespace
+explicitly. Ordinary `clst2win` expands registered relative paths to SSH homes;
+other SSH hosts retain their original behavior.
+
+Fast preview stays offline. `--list` and `--attributes` are separately authorized
+read-only probes of the exact source, not filtered download plans. Complete
+SSH inventories and a tiny WZ transfer fixture have passed acceptance. All three
+clusters use Rayfile batches by parent directory, verify every file and source
+metadata stability, then preserve existing files with incoming numbered names.
+HF/TY share this workflow but remain untested against their servers; `--run`
+prints that status and proceeds with the same checks. Upload keeps its existing
+behavior.
+See [source paths](sync/README.md#source-paths) and
+[fast download modes and limits](sync/README.md#fast-cluster-download).
 
 ## Quick Reference
 

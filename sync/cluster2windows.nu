@@ -1,6 +1,13 @@
 #!/usr/bin/env nu
 
-# Download matching remote files into one local directory.
+# Registered SSH home paths.
+let cluster_roots = {
+  hfcluster: "/public/home/yuhanjin"
+  tycluster: "/work/home/yuhanjin"
+  wzcluster: "/work/home/yuhanjin"
+}
+
+# Download matching remote directory contents.
 def status-label [status: string] {
   match $status {
     "OK" => $"(ansi green)OK(ansi reset)"
@@ -54,8 +61,8 @@ def print-header [
 }
 
 def main [
-  remote: string # SSH host (e.g., "user@server")
-  src_dir: string # Remote source directory
+  remote: string # SSH host; hf, ty, wz also select the configured cluster aliases
+  src_dir: string # Registered clusters: full SSH path or home-relative directory
   dest: path # Local destination (WSL path)
   prefix?: string # File prefix pattern (e.g., "bz")
   suffix?: string # File suffix pattern (e.g., ".sdf")
@@ -73,9 +80,19 @@ def main [
   check-command "ssh"
   check-command "rsync"
 
+  let ssh_host = match $remote {
+    "hf" => "hfcluster"
+    "ty" => "tycluster"
+    "wz" => "wzcluster"
+    _ => $remote
+  }
+  let root = ($cluster_roots | get --optional $ssh_host)
+  let mapped = if $root != null and not ($src_dir | str starts-with "/") {
+    $"($root)/($src_dir)"
+  } else { $src_dir }
   # A trailing slash syncs directory contents.
-  let src_path = if ($src_dir | str ends-with "/") { $src_dir } else { $"($src_dir)/" }
-  let remote_src = $"($remote):($src_path)"
+  let src_path = if ($mapped | str ends-with "/") { $mapped } else { $"($mapped)/" }
+  let remote_src = $"($ssh_host):($src_path)"
 
   # Include the requested pattern and exclude everything else.
   let p = ($prefix | default "")
@@ -91,6 +108,8 @@ def main [
   }
 
   print-header $remote_src $dest_path $p $s $do_dry_run
+  print $"Input: ($src_dir)"
+  print $"Path: (if $root == null { 'unchanged for this SSH host' } else if ($src_dir | str starts-with '/') { 'absolute SSH path' } else { 'relative to the registered SSH home' })"
 
   if (not $do_dry_run) and not ($dest_path | path exists) {
     mkdir $dest_path

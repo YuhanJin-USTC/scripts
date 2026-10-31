@@ -29,24 +29,55 @@ owner.
 
 ## Fast Transfer
 
-- `fast_cluster2windows.nu` and `fast_windows2cluster.nu` retain the existing
-  Nushell script and terminal-output style. Their aliases are `fclst2win`
-  and `fwin2clst` in the Stow-managed Nushell configuration.
-- Fast-transfer preview is local-only and must not run Rayfile, read tokens,
-  connect to a server or create destination directories. Only `--run` transfers;
-  reject conflicting modes and propagate nonzero client exit codes.
-- Keep verified endpoints in the script host tables. Portal paths are not SSH
-  paths; do not infer another cluster's settings or map its SSH home to Rayfile.
-- Preserve the user-selected rename policy for both directions. Do not add
-  overwrite, append, deletion or SSH preparation. Directory paths retain native
-  Rayfile semantics, not an assumed rsync trailing-slash equivalence.
-- Read tokens at the hidden run-time prompt or from `RAYFILE_TOKEN`; never
-  persist them or print them in command previews. Do not reuse sample tokens.
-- Reuse the existing upload exclusion file with an explicit `--all-files`
-  bypass. Merge native wildcard patterns into one semicolon-separated `-exd`;
-  repeated `-exd` options replace prior patterns. Prefix/suffix inclusion is
-  unsupported by the reviewed client and must not silently become an all-files
-  transfer.
+- Preserve `fclst2win`, `fwin2clst` and the existing terminal-output conventions.
+  Register only hf/hfcluster at `/public/home/yuhanjin` and ty/tycluster,
+  wz/wzcluster at `/work/home/yuhanjin`, each with portal home `/`.
+- For fast download, map only the selected registered SSH home plus its exact
+  `/` boundary to the portal home; relative paths use that home. Other absolute
+  paths retain portal meaning. `--portal-path` bypasses SSH-home conversion.
+  Never guess a mapping for an unknown target or a merely similar prefix.
+- `clst2win` expands relative paths only for the registered clusters. Preserve
+  absolute SSH paths and all other SSH hosts' existing pass-through behavior.
+  Keep SSH and portal namespaces explicit in preview output.
+- Default fast preview is local-only: no token, client, connection or destination
+  creation. Preserve exclusive `--dry-run`, `--list`, `--attributes`, `--ssh-list`, `--run`;
+  `--portal-path` is a namespace option, not an execution mode.
+- `--list` and `--attributes` are separately authorized exact-path metadata
+  probes through the restricted native client. Neither downloads, recursively
+  probes, applies prefix/suffix filtering to its output, or uses the local
+  destination. Attributes does not establish a complete directory listing.
+- Support hf/ty/wz downloads through the same runtime checks. Only WZ has live
+  fixture acceptance; HF/TY remain untested against their servers and display
+  that status without an extra confirmation gate. Run explicitly uses SSH typed
+  inventories before/after transfer; payloads remain on Rayfile. Never infer
+  reliable types from native list/attributes or widen incomplete selections.
+- Absolute UTF-8 filelists flatten basenames. Batch by parent into separate
+  empty stages, reconstruct inner paths, and verify exact files/types/sizes
+  plus unchanged SSH stat metadata before publishing. No per-file probing,
+  rsync payload fallback or implicit all-files transfer.
+- Stage on the destination filesystem. Publish with no-overwrite hard links;
+  number incoming collisions as `name.1.ext`. Preserve existing content and
+  fail clearly if hard links are unsupported. Report partial local publication
+  and retain bounded credential-free failure diagnostics while cleaning owned
+  stage payloads. Native failures must publish nothing.
+- Keep the 45-second/1-MiB bounds for metadata only. Production transfer has
+  no total time limit, retains bounded logs in memory, and terminates its child
+  process group on interruption. Do not treat `Failed: 0` as failure or claim
+  production remote hash verification from the synthetic fixture hashes.
+- Prefix/suffix selection follows rsync filename-byte globs `*`, `?`, balanced
+  `[]` and directory blocking. Refuse `/`, backslash, `**`, controls and invalid
+  classes; reject links, unknown types, duplicates and absent parent records.
+- Reject the resolved portal root, dot segments and unsafe local destinations.
+  Preserve quoted path whitespace and Unicode spelling. Remove the source root
+  only once and preserve internal paths; retain the reviewed rename contract.
+  Unsupported download exclusions must refuse, never silently widen selection.
+- Upload keeps native rename semantics, existing exclusions and `--all-files`.
+  Merge wildcard patterns into one semicolon-separated `-exd`; repeated `-exd`
+  replaces prior patterns. Do not apply download assumptions to upload.
+- Runtime hidden prompts and `RAYFILE_TOKEN` are sensitive. Never persist tokens,
+  reuse samples or print them in previews/diagnostics. Keep probe runtime state
+  ephemeral, response/time bounds and terminal restoration. A source mapping
+  or one server observation does not verify other servers or real transfers.
 
 ## Validation
 
@@ -62,12 +93,12 @@ owner.
   filtering, naming and transfer-success claims unverified until tested.
 
 <!-- research-workflow:policy:start -->
-<!-- digest: 53b828bcd3473143cd53c8eb3790393d6fec47f065abe2b14e0e167f32b593b7 -->
+<!-- digest: 89d09a6994f49df8c13b524a2af6ad0acf361194fc848c001cb517be1ee3a44f -->
 ## Managed Research Workflow Policy
 
 - `case-confirmation`: "A Case target does not imply a Case edit. For explicit registration or simulation-definition changes, finish files/checks, show the saved preview, actually ask and await the user, then apply the exact plan. A digest is not consent; unchanged accepted definitions add no revision."
 - `external-operations`: "Do not run cluster, simulation, MATLAB, network, sync, build, or Git mutations without explicit user authorization."
-- `framework-authority`: "Use Research Workflow 0.2.3 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
+- `framework-authority`: "Use Research Workflow 0.2.4 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
 - `indexing`: "Treat SQLite and saved plans as device-local derived state. Queries may refresh the disposable index; never synchronize it or use it as authority."
 - `multi-device`: "Synchronize and check portable authority before context or any portable write after switching devices, including event-only work. Keep local TOML/device/paths, upgrade devices sequentially, and stop old metadata writers until local acceptance. External sync remains separately authorized."
 - `propagation`: "Preview pending policy semantics, exact targets and differences; obtain real user approval of the stable digest, record it through policy approve, then apply. Preserve cumulative device approvals and unmanaged AGENTS bytes; Data/Notes and body patches require exact separate scope."

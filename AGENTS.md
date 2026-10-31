@@ -4,7 +4,8 @@
 
 These instructions apply to the repository rooted at `/home/yuhanjin/scripts`.
 Read the nearest nested `AGENTS.md` before working in a subsystem; nested files
-contain only subtree-specific rules and inherit this file. Explicit user
+contain only subtree-specific rules and inherit this file. Container PIC and
+post-processing differences live in `build_containers/AGENTS.md`. Explicit user
 instructions take priority within the authorized scope.
 
 `README.md` is the human-facing behavior and usage guide. Keep durable agent
@@ -157,6 +158,16 @@ including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
   Use the shared header, field, and status conventions instead of scattered
   `Write-Host` diagnostics.
 
+## Instruction Ownership
+
+Keep common safety, style, validation and result-recording rules here. The
+backup, container, cleanup, media, runtime, sync, key-deployment and update
+subtrees own their distinct risks. Usage belongs in the existing README;
+completed results belong in existing Research Workflow events, not new memory
+files. Do not remove a managed target by deleting its allowlist entry.
+Target retirement needs a same-root ancestor, a fresh policy plan and actual
+user approval; body edits and final file deletion are separate exact approvals.
+
 ## Research Workflow Contract
 
 - Restore compact memory with
@@ -220,12 +231,12 @@ A task is complete only when:
 - the handoff lists changed paths, validation, skipped operations, and all
   remaining `unknown` or `to-confirm` items.
 <!-- research-workflow:policy:start -->
-<!-- digest: 53b828bcd3473143cd53c8eb3790393d6fec47f065abe2b14e0e167f32b593b7 -->
+<!-- digest: 89d09a6994f49df8c13b524a2af6ad0acf361194fc848c001cb517be1ee3a44f -->
 ## Managed Research Workflow Policy
 
 - `case-confirmation`: "A Case target does not imply a Case edit. For explicit registration or simulation-definition changes, finish files/checks, show the saved preview, actually ask and await the user, then apply the exact plan. A digest is not consent; unchanged accepted definitions add no revision."
 - `external-operations`: "Do not run cluster, simulation, MATLAB, network, sync, build, or Git mutations without explicit user authorization."
-- `framework-authority`: "Use Research Workflow 0.2.3 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
+- `framework-authority`: "Use Research Workflow 0.2.4 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
 - `indexing`: "Treat SQLite and saved plans as device-local derived state. Queries may refresh the disposable index; never synchronize it or use it as authority."
 - `multi-device`: "Synchronize and check portable authority before context or any portable write after switching devices, including event-only work. Keep local TOML/device/paths, upgrade devices sequentially, and stop old metadata writers until local acceptance. External sync remains separately authorized."
 - `propagation`: "Preview pending policy semantics, exact targets and differences; obtain real user approval of the stable digest, record it through policy approve, then apply. Preserve cumulative device approvals and unmanaged AGENTS bytes; Data/Notes and body patches require exact separate scope."
