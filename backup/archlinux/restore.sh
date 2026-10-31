@@ -11,7 +11,7 @@ PROXY_URL="http://127.0.0.1:7890"
 SOCKS_URL="socks5://127.0.0.1:7890"
 PACMAN_FALLBACK_MIRROR='Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch'
 SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
-SET_ROOT="$SCRIPT_DIR/data/sets"
+CURRENT_SET="$SCRIPT_DIR/data/github-current"
 HELPER="$SCRIPT_DIR/backup_set.py"
 PREVIEW=false
 SET_DIR=""
@@ -30,12 +30,12 @@ usage() {
   printf '%s\n' "Usage: $0 [--set PATH | --legacy PATH] [--preview]" "" \
     "Restore an explicitly selected Arch backup; real mode is the default." \
     "Without a path, interactively choose a complete set; never select newest automatically." "" \
-    "Options:" "  --set PATH    Complete data/sets/<ID> directory." \
+    "Options:" "  --set PATH    Published data/github-current or a complete ID-named set." \
     "  --legacy PATH Old archlinux directory containing data/ and pkg_lists/." \
     "  --preview     Read public manifests only; no decryption, staging or changes." \
     "  -h, --help    Show this help." "" \
     "Examples:" "  bash backup/archlinux/restore.sh --preview" \
-    "  sudo bash backup/archlinux/restore.sh --set /path/to/data/sets/ID"
+    "  sudo bash backup/archlinux/restore.sh --set /path/to/data/github-current"
 }
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -61,9 +61,8 @@ field Repositories 'restore selected worktree contents; retain existing .git and
 field Proxy "AUR HTTP=$PROXY_URL SOCKS=$SOCKS_URL; package fallback=https://geo.mirror.pkgbuild.com"
 field 'AUR bootstrap' 'if yay is missing: https://aur.archlinux.org/yay-bin.git, new private build directory, target-user makepkg; explicit confirmation before network/build/install'
 if [ -z "$SET_DIR$LEGACY_DIR" ]; then
-  shopt -s nullglob
-  candidates=("$SET_ROOT"/*/COMPLETE)
-  shopt -u nullglob
+  candidates=()
+  if [ -f "$CURRENT_SET/COMPLETE" ]; then candidates+=("$CURRENT_SET/COMPLETE"); fi
   if [ "${#candidates[@]}" -eq 0 ]; then
     if [ "$PREVIEW" = true ]; then status DRY-RUN 'No complete set found; select --set PATH or --legacy PATH before recovery.'; exit 0; fi
     status ERROR 'No complete backup sets found.'; exit 1
@@ -103,7 +102,8 @@ if [ "$IS_RUNNER" = false ]; then
   chmod 600 "$runner/.owned"
   exec 9<>"$runner/.owned"
   cp -- "$SCRIPT_DIR/restore.sh" "$SCRIPT_DIR/backup_set.py" "$SCRIPT_DIR/nvim_state.py" \
-    "$SCRIPT_DIR/nvim_plugins.lua" "$SCRIPT_DIR/rayfile_state.py" "$SCRIPT_DIR/mason_tools.py" "$runner/"
+    "$SCRIPT_DIR/nvim_plugins.lua" "$SCRIPT_DIR/rayfile_state.py" "$SCRIPT_DIR/mason_tools.py" \
+    "$SCRIPT_DIR/topiary_dependencies.py" "$runner/"
   export ARCH_RESTORE_STAGE="$runner"
   if [ -n "$SET_DIR" ]; then exec bash "$runner/restore.sh" --set "$SET_DIR"
   else exec bash "$runner/restore.sh" --legacy "$LEGACY_DIR"; fi
@@ -313,10 +313,12 @@ confirm() {
 }
 NVIM_READY=false
 RAYFILE_READY=false
+RECOVERY_ID=legacy
 
 step 1/8 'Verify every archive, encrypted internal manifest, architecture and staging space.'
 if [ -n "$SET_DIR" ]; then
   python3 -B "$HELPER" verify "$SET_DIR" >"$WORK_DIR/set.json"
+  RECOVERY_ID=$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$WORK_DIR/set.json")
   python3 -B - "$WORK_DIR/set.json" "$WORK_DIR/components" "$WORK_DIR/component-states" <<'PY'
 import json,sys
 from pathlib import Path
@@ -558,11 +560,12 @@ if [ -d "$WORK_DIR/research_workflow" ]; then
 fi
 CURRENT_COMPONENT=preflight
 CONFIG_CHOICES="$WORK_DIR/config-choices.json"
-python3 -B - "$CONFIG_CHOICES" "$SET_DIR" <<'PY_CHOICES'
+python3 -B - "$CONFIG_CHOICES" "$WORK_DIR/set.json" <<'PY_CHOICES'
 from pathlib import Path
 import hashlib,json,sys
-root=Path(sys.argv[2]) if sys.argv[2] else None
-value={'set_sha256':hashlib.sha256((root/'manifest.json').read_bytes()).hexdigest() if root else 'legacy','choices':{}}
+path=Path(sys.argv[2])
+saved=(json.dumps(json.loads(path.read_text()),sort_keys=True,indent=2)+'\n').encode() if path.is_file() else None
+value={'set_sha256':hashlib.sha256(saved).hexdigest() if saved is not None else 'legacy','choices':{}}
 Path(sys.argv[1]).write_text(json.dumps(value)+'\n')
 PY_CHOICES
 choose_stow_content() {
@@ -575,7 +578,7 @@ choose_stow_content() {
   python3 -B "$HELPER" content-info "$repository" >"$WORK_DIR/repository-info.json"
   current_target="$TARGET_HOME/$relative"
   current_source="$TARGET_HOME/dot_files/$package_path"
-  choice=$(python3 -B - "$HELPER" "$WORK_DIR/effective-info.json" "$WORK_DIR/repository-info.json" "$CONFIG_CHOICES" "$TARGET_HOME/.local/share/arch-recovery/$(basename "${SET_DIR:-legacy}")/config-choices.json" "$relative" "$current_target" "$current_source" <<'PY_CHOICE'
+  choice=$(python3 -B - "$HELPER" "$WORK_DIR/effective-info.json" "$WORK_DIR/repository-info.json" "$CONFIG_CHOICES" "$TARGET_HOME/.local/share/arch-recovery/$RECOVERY_ID/config-choices.json" "$relative" "$current_target" "$current_source" <<'PY_CHOICE'
 from pathlib import Path
 import importlib.util,json,sys
 spec=importlib.util.spec_from_file_location('b2',sys.argv[1]);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
@@ -945,25 +948,20 @@ topiary_probe() {
 if [ -d "$WORK_DIR/topiary" ]; then
   CURRENT_COMPONENT=topiary
   topiary_probe "$WORK_DIR/topiary/bin/topiary" dependencies >"$WORK_DIR/topiary-target-dependencies.txt"
-  python3 -B - "$WORK_DIR/topiary/runtime.json" "$WORK_DIR/topiary-target-dependencies.txt" "$WORK_DIR/topiary-target-runtime.json" <<'PY_TOPIARY_CHECK'
+  python3 -IB - "$WORK_DIR/topiary/runtime.json" "$WORK_DIR/topiary-target-dependencies.txt" "$WORK_DIR/topiary-target-runtime.json" "$SCRIPT_DIR" <<'PY_TOPIARY_CHECK'
 from pathlib import Path
-import hashlib,json,os,re,subprocess,sys
-saved=json.load(open(sys.argv[1]));actual={};report=[]
-for line in Path(sys.argv[2]).read_text().splitlines():
- match=re.fullmatch(r'\s*(\S+)\s+=>\s+(/\S+)\s+\(0x[0-9a-f]+\)\s*',line)
- loader=re.fullmatch(r'\s*(/\S+)\s+\(0x[0-9a-f]+\)\s*',line)
- if match:name,value=match.groups()
- elif loader:value=loader[1];name=Path(value).name
- elif re.fullmatch(r'\s*linux-vdso\.so\.\d+\s+\(0x[0-9a-f]+\)\s*',line):continue
- else:raise SystemExit('Topiary target libraries are missing or incompatible; no binary was deployed.')
- if name in actual:raise SystemExit('Duplicate target library identity.')
- actual[name]=Path(value)
-if set(actual)!={row['name'] for row in saved['dependencies']}:raise SystemExit('Topiary target dependency set changed; review required.')
-for row in saved['dependencies']:
- path=actual[row['name']];source=row['source']
- if not path.is_file() or str(path.resolve())!=row['realpath']:raise SystemExit('Topiary target system-library path differs; review required.')
+import hashlib,json,os,subprocess,sys
+sys.path.insert(0,sys.argv[4])
+from topiary_dependencies import resolved_dependencies,match_recorded
+record=Path(sys.argv[1]);saved=json.loads(record.read_text());report=[]
+try:
+ actual=resolved_dependencies(record.parent/'bin/topiary',Path(sys.argv[2]).read_text(encoding='utf-8'))
+ pairs=match_recorded(saved['dependencies'],actual)
+except (ValueError,OSError,RuntimeError) as error:raise SystemExit(str(error)) from None
+for row,found in pairs:
+ path=Path(found['realpath']);source=row['source']
  with path.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
- info={'name':row['name'],'path':str(path),'sha256':digest,'same_bytes':digest==row['sha256']}
+ info={**found,'sha256':digest,'same_bytes':digest==row['sha256']}
  if source['manager']=='pacman':
   owner=subprocess.run(['/usr/bin/pacman','-Qoq',str(path.resolve())],capture_output=True,text=True,check=True,env={**os.environ,'LC_ALL':'C'}).stdout.strip()
   if owner!=source['package']:raise SystemExit('Topiary dependency package source differs; review required.')
@@ -1134,7 +1132,7 @@ fi
 if [ -d "$WORK_DIR/rebuild" ]; then
   CURRENT_COMPONENT=rebuild
   cp -- "$CONFIG_CHOICES" "$WORK_DIR/rebuild/config-choices.json"
-  deploy_tree "$WORK_DIR/rebuild" "$TARGET_HOME/.local/share/arch-recovery/$(basename "${SET_DIR:-legacy}")" "$TARGET_USER:$TARGET_USER"
+  deploy_tree "$WORK_DIR/rebuild" "$TARGET_HOME/.local/share/arch-recovery/$RECOVERY_ID" "$TARGET_USER:$TARGET_USER"
   set_result rebuild verified 'Version/source/path records and configuration choices saved; this status does not certify unexecuted reconstructions.'
   if python3 -B -c 'import json,sys;raise SystemExit(0 if not json.load(open(sys.argv[1])).get("npm") else 1)' "$WORK_DIR/rebuild/npm.json"; then
     set_result private_npm skipped 'No private npm packages were recorded.'

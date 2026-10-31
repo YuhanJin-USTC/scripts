@@ -1,0 +1,75 @@
+{
+  "architecture": "x86_64",
+  "components": {
+    "credentials": {
+      "file": "credentials.tar.gz.gpg",
+      "sha256": "35278f56d8fbe339a6b314c45b7b133759ab0f1458ff326da5bc39a58729b2a6",
+      "size": 8898,
+      "state": "present"
+    },
+    "dot_files": {
+      "file": "dot_files.tar.gz.gpg",
+      "sha256": "9595d3123dc37d78fd377343e02a84687d9333c182756fb4b2db9c3d88390989",
+      "size": 46717,
+      "state": "present"
+    },
+    "home": {
+      "file": "home.tar.gz",
+      "sha256": "282a19823b8c80023e912fe28d0f552356001c670ee3fb9c9276cfcca3c1cb15",
+      "size": 4142,
+      "state": "present"
+    },
+    "nvim": {
+      "file": "nvim.tar.gz",
+      "sha256": "cf52356312c7087c98905775bb798cd1f5e76b007e4a14eb934029a681198724",
+      "size": 66471161,
+      "state": "present"
+    },
+    "packages": {
+      "file": "packages.tar.gz",
+      "sha256": "fc590b37fe89de25853889ab920ea28096380a0c5424257469be35aa975d0a28",
+      "size": 4801,
+      "state": "present"
+    },
+    "rayfile": {
+      "file": "rayfile.tar.gz",
+      "sha256": "7b47f9f9ca3e8197803d2f8e2bf5279e4b8cde7208b3f0ad28c8f6a11be6f835",
+      "size": 30709941,
+      "state": "present"
+    },
+    "rebuild": {
+      "file": "rebuild.tar.gz",
+      "sha256": "e01c23aaf5214ca6c5b8b7904bce6637c618fa660fc1d36a0ba84680b38ea2c4",
+      "size": 4530,
+      "state": "present"
+    },
+    "research_workflow": {
+      "file": "research_workflow.tar.gz",
+      "sha256": "7ecf3d46b101c15b303b8b612d476df78d74d192c216ae6c89d5c5826296e813",
+      "size": 554436,
+      "state": "present"
+    },
+    "scripts": {
+      "file": "scripts.tar.gz",
+      "sha256": "080509535e48f6a25c61f6587eeedaeb53e6a32e338b4197e5708d7f631194a7",
+      "size": 177901,
+      "state": "present"
+    },
+    "system": {
+      "file": "system.tar.gz",
+      "sha256": "33d14cec348b3eb74ad0593220909e338b407d6a4b38289561e0ad0ccc08e06c",
+      "size": 4878,
+      "state": "present"
+    },
+    "topiary": {
+      "file": "topiary.tar.gz",
+      "sha256": "4f5cf7927961760ecef11ce00bf7bd99ff7714d28ba63cea05cf2b66a3de6123",
+      "size": 8704437,
+      "state": "present"
+    }
+  },
+  "created_at": "2026-10-31T12:25:13.934281+00:00",
+  "format": 1,
+  "id": "20261031T122513Z-9f0d9b3d943c",
+  "state": "COMPLETE"
+}

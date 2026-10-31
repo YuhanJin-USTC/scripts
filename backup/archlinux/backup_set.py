@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import ctypes
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -16,6 +17,8 @@ import tempfile
 import uuid
 
 FORMAT = 1
+CURRENT = 'github-current'
+SET_ID = re.compile(r'[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}')
 CATALOG = '.backup-manifest.json'
 COMPONENTS = ('packages', 'system', 'home', 'credentials', 'dot_files', 'scripts',
               'research_workflow', 'topiary', 'nvim', 'rayfile', 'rebuild')
@@ -266,10 +269,16 @@ def init_set(root):
     name = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:12]
     target = root / name
     target.mkdir(mode=0o700)
-    write_json(target / 'manifest.json', {'format': FORMAT, 'id': name, 'state': 'INCOMPLETE',
-               'architecture': platform.machine(), 'created_at': datetime.now(timezone.utc).isoformat(),
-               'components': {}})
-    print(target)
+    identity = temp_identity(target)
+    try:
+        write_json(target / 'manifest.json', {'format': FORMAT, 'id': name, 'state': 'INCOMPLETE',
+                   'architecture': platform.machine(), 'created_at': datetime.now(timezone.utc).isoformat(),
+                   'components': {}})
+        print(target, flush=True)
+    except BaseException:
+        os.environ['CODEX_TEMP_CLEANUP'] = '1'
+        cleanup_owned(target, identity)
+        raise
 
 
 def load_set(root, complete=False):
@@ -277,7 +286,13 @@ def load_set(root, complete=False):
     if (root / 'manifest.json').is_symlink() or not (root / 'manifest.json').is_file():
         fail('Manifest must be a regular file.')
     manifest = read_json(root / 'manifest.json')
-    if not isinstance(manifest, dict) or manifest.get('format') != FORMAT or manifest.get('id') != root.name:
+    if not isinstance(manifest, dict) or manifest.get('format') != FORMAT:
+        fail('Unsupported backup-set manifest.')
+    identity = manifest.get('id')
+    if root.name == CURRENT:
+        if not complete or not isinstance(identity, str) or not SET_ID.fullmatch(identity):
+            fail('Invalid published backup identity.')
+    elif identity != root.name:
         fail('Unsupported backup-set manifest or mismatched identity.')
     if manifest.get('architecture') != platform.machine():
         fail('Backup architecture differs from this machine.')
@@ -318,6 +333,29 @@ def check_components(root, manifest):
             archive_records(path, name not in ('nvim', 'rayfile'))
     if set(p.name for p in root.iterdir()) - expected:
         fail('Unexpected files in backup set.')
+
+
+def publish_set(root):
+    if not SET_ID.fullmatch(root.name):
+        fail('Publication requires a generated set directory.')
+    manifest = load_set(root, complete=True)
+    check_components(root, manifest)
+    if any(p.stat().st_size > 100 * 1024 * 1024 for p in root.iterdir()):
+        fail('A component exceeds the 100 MiB per-file Git publication limit.')
+    current = root.parent / CURRENT
+    replacing = current.exists() or current.is_symlink()
+    if replacing:
+        previous_id = temp_identity(current)
+        previous = load_set(current, complete=True)
+        check_components(current, previous)
+    # Linux NOREPLACE for first publication, EXCHANGE for subsequent backups.
+    rename = ctypes.CDLL(None, use_errno=True).renameat2
+    if rename(-100, os.fsencode(root), -100, os.fsencode(current), 2 if replacing else 1):
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), str(current))
+    if replacing:
+        os.environ['CODEX_TEMP_CLEANUP'] = '1'
+        cleanup_owned(root, previous_id)
 
 
 def compare(source, target, synthetic=(), excluded=()):
@@ -483,7 +521,7 @@ def main():
     cmd = sub.add_parser('init'); cmd.add_argument('root', type=Path)
     cmd = sub.add_parser('record'); cmd.add_argument('root', type=Path); cmd.add_argument('name', choices=COMPONENTS)
     cmd.add_argument('--file'); cmd.add_argument('--absent')
-    for name in ('seal', 'verify'):
+    for name in ('seal', 'verify', 'publish'):
         cmd = sub.add_parser(name); cmd.add_argument('root', type=Path)
     cmd = sub.add_parser('catalog'); cmd.add_argument('root', type=Path)
     cmd.add_argument('--synthetic-directory', action='append', default=[])
@@ -505,6 +543,8 @@ def main():
     try:
         if args.command == 'init':
             init_set(args.root.absolute()); return 0
+        if args.command == 'publish':
+            publish_set(args.root.absolute()); return 0
         if args.command in ('record', 'seal', 'verify'):
             root = args.root.absolute(); manifest = load_set(root, args.command == 'verify')
             if args.command != 'verify' and (manifest['state'] != 'INCOMPLETE' or (root / 'COMPLETE').exists()):

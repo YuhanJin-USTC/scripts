@@ -8,14 +8,14 @@ not used merely to validate these scripts; helper fixtures use isolated data.
 
 | File or path | Purpose |
 | --- | --- |
-| `archlinux/backup.sh` | Create a new backup set |
+| `archlinux/backup.sh` | Publish one verified backup set for Git |
 | `archlinux/restore.sh` | Select, validate and recover a set |
 | `archlinux/backup_set.py` | Manifests, archive validation, safe staging and actual differences |
 | `archlinux/nvim_state.py`, `nvim_plugins.lua` | Accepted Neovim generations and offline snapshots |
+| `archlinux/topiary_dependencies.py` | Shared ELF interpreter and system dependency resolution for capture and recovery |
 | `archlinux/rayfile_state.py` | Pinned Rayfile runtime snapshot |
 | `archlinux/mason_tools.py` | Internal pinned Mason capture/reconstruction, exposed through `nvim_state.py` |
-| `archlinux/data/sets/<ID>/` | Immutable complete or retained incomplete set |
-| `archlinux/data/`, `pkg_lists/` | Existing legacy payloads, preserved unchanged |
+| `archlinux/data/github-current/` | Current complete set; ordinary Git tracks its component files |
 
 ## Backup
 
@@ -26,11 +26,12 @@ bash backup/archlinux/backup.sh
 ```
 
 Preview lists the scope without reading credentials, running package tools or
-creating files. A real run uses a unique UTC/UUID directory below `data/sets`.
-The set starts `INCOMPLETE`; each component records its state, byte count and
-SHA-256. `COMPLETE` is published only after every required component and archive
-check succeeds. Failed sets remain clearly incomplete. Existing sets, package
-lists and legacy archives are never overwritten or removed.
+creating files. A real run creates a private ID-named work directory in
+`data/`. Once all components, hashes and archives pass, Linux atomically
+publishes the whole directory at `data/github-current/`. A later success
+replaces the previous verified set. Ordinary failures clean the invocation's
+staging and preserve the published set. The manifest retains the unique ID.
+The scripts worktree archive excludes the whole backup data directory.
 
 | Component | Contents and limits |
 | --- | --- |
@@ -55,9 +56,15 @@ each symlink before applying following `..` components, then checks actual
 resolved containment after staging. Unknown links or
 special files fail, rather than silently omitting contents.
 
-The full `data/sets/` directory is ignored by Git. It remains eligible for the
-existing `scripts` NAS synchronization; no NAS rule, remote backend, automatic
-upload or LFS behavior is added. Sensitive staging roots use mode 0700;
+Only the named component archives, `manifest.json` and `COMPLETE` in
+`data/github-current/` are eligible for ordinary Git. Use a private repository
+appropriate for the configuration in the plaintext components. Each published
+file is limited to 100 MiB. When ready, commit the recovery scripts/rules and
+the entire published set together and push that commit. On the other machine
+clone or pull that same commit, then use `restore.sh --set
+/path/to/scripts/backup/archlinux/data/github-current --preview`.
+There is no Git action inside backup or restore. Git history can still contain
+previously committed archive versions. Sensitive staging roots use mode 0700;
 plaintext archives and manifests use 0600. Original member modes remain inside these protected roots for recovery.
 Symmetric GPG operations use an independent 0700 temporary `--homedir`,
 `--no-options` and no symmetric passphrase cache; they do not use the source
@@ -83,8 +90,8 @@ Backup does not download, rebuild or activate an editor generation.
 ```bash
 bash backup/archlinux/restore.sh --help
 bash backup/archlinux/restore.sh --preview
-bash backup/archlinux/restore.sh --set /path/to/data/sets/ID --preview
-sudo bash backup/archlinux/restore.sh --set /path/to/data/sets/ID
+bash backup/archlinux/restore.sh --set /path/to/data/github-current --preview
+sudo bash backup/archlinux/restore.sh --set /path/to/data/github-current
 sudo bash backup/archlinux/restore.sh --legacy /path/to/old/archlinux
 ```
 
@@ -206,12 +213,30 @@ Format 1 without actual plugin payloads is `needs-rebuild`; it never becomes a
 ready generation or triggers Lazy downloads. Failed candidates and previous
 generations remain available.
 
+The v3 managed launcher exports `PYTHONDONTWRITEBYTECODE=1` for Neovim and
+its Python children, including Jukit. Plugin-tree integrity covers every file.
+An exact v2 launcher remains recognized; `status --json` reports
+`launcher_upgrade_required`. To preview the launcher-only migration:
+
+```bash
+python3 -B backup/archlinux/nvim_state.py --home "$HOME" launcher-upgrade --json
+```
+
+After reviewing its target, safety copy and hashes, run `launcher-upgrade
+--expect-sha256 BEFORE_SHA256 --run --json` with the same helper and home.
+The operation saves the exact old launcher and replaces it atomically.
+The active pointer and accepted manifest stay in place. Open a new Neovim
+process to inherit the new setting.
+
 Topiary stays at `/usr/local/bin/topiary`. Its binary uses the same explicit
 file-difference confirmation and safety preservation as other files; matching
 bytes and mode skip replacement. Recovery does not create a user launcher or
 private Topiary runtime, and does not overwrite `/usr/lib`. Dependency packages
 with recorded official sources join the confirmed Arch transaction. Target loader resolution, canonical
-library paths and package ownership are checked; library hashes and installed
+library paths and package ownership are checked. Capture and recovery identify
+the loader from the binary's ELF `PT_INTERP` and accept single-path and
+`interpreter => resolved-path` ldd entries when the canonical paths agree.
+Format-2 single-path records remain supported. Library hashes and installed
 version differences are shown and retained. Changed unmanaged libraries fail
 because their compatibility is unknown. Archive execution (`ldd` and the saved
 version check) runs in a network-disabled bubblewrap namespace with only system
@@ -264,9 +289,10 @@ complete-set success.
    when the displayed source scope is approved. Enter and confirm one hidden GPG
    passphrase shared by the credential and dot_files components. Keep that passphrase
    available independently of this set.
-3. Transfer the **whole set directory** with the existing, separately authorized
-   NAS workflow. `data/sets/` is Git-ignored, so copying only Git-tracked files
-   is insufficient. Do not move individual files between sets.
+3. From the scripts checkout, stage the tools and the complete
+   `backup/archlinux/data/github-current/` directory, including any first-time
+   deletions of retired tracked archives. Commit and push. On the second
+   machine, clone or pull that revision before restoring the published set.
 4. On the target Arch/ArchWSL machine, provide Python, GNU tar, GPG and Pacman,
    the selected complete set, and these recovery scripts. Run `restore.sh
    --set /exact/set --preview`, then the corresponding root invocation in a
@@ -280,7 +306,7 @@ complete-set success.
    mappings and local acceptance separately; they are deliberately not copied
    from the source machine. Preserve any current local file until that review.
 
-A failed backup stays `INCOMPLETE`; rerunning backup creates another unique set.
+A failed backup leaves the last verified publication available. A hard kill can leave an ignored ID-named staging directory in `data/`.
 Do not edit a marker or merge incomplete components to manufacture completeness.
 A failed restore stops nonzero and retains safety backups and failed editor
 candidates. Rerunning with the same explicit set recomputes current differences and reuses
@@ -303,7 +329,7 @@ a vendor signature.
 | --- | --- |
 | Executable, official readme, manifest, checksums | `~/.local/share/rayfile-runtime/` |
 | Shell entry point | `~/.local/bin/rayfile-c` |
-| Portable program snapshot | `backup/archlinux/data/sets/<ID>/rayfile.tar.gz` |
+| Portable program snapshot | `backup/archlinux/data/github-current/rayfile.tar.gz` |
 | Preserved installation during restore | `~/rayfile_restore_backup_*/` |
 | Native client logs | `~/.config/Raysync/` |
 

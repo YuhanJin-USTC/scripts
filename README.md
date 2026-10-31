@@ -82,7 +82,7 @@ Important boundaries:
 - Container builds use `build --force` and may replace an existing SIF.
 - Cluster Jupyter sessions use Slurm compute nodes, preserve token
   authentication, and never upload the configured SIF automatically.
-- Backup creates immutable complete/incomplete sets. Restore preflights staged
+- Backup publishes a single verified set in `data/github-current/`. Restore preflights staged
   components, shows exact differences and preserves safety backups before writes;
   it installs packages and runs Stow only with explicit confirmation, without
   force-syncing user repositories.
@@ -143,7 +143,7 @@ The corresponding aliases live in
 | `bd_post_process_images` | EPOCH Jupyter image build |
 | `test_pic_images` | PIC image smoke test |
 | `tsf_clst_key` | Cluster SSH-key deployment |
-| `backup_archlinux` | New immutable Arch backup set; `--preview` available |
+| `backup_archlinux` | Publish one verified Git-ready set at `backup/archlinux/data/github-current/`; `--preview` available |
 | `restore_archlinux` | Select and preflight a backup set; `--preview` available |
 | `update_archlinux` | System update followed by editor candidate preparation |
 | `asr_mt` | ASR/translation/subtitle pipeline |

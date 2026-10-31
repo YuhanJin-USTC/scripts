@@ -974,10 +974,12 @@ def validate(home, name, helper=HELPER, already_locked=False, check_source_state
         raise
 
 
-def launcher_text(root):
+def launcher_text(root, *, legacy=False):
+    revision = "2" if legacy else "3"
+    bytecode = "" if legacy else "export PYTHONDONTWRITEBYTECODE=1\n"
     return """#!/usr/bin/env bash
 set -euo pipefail
-# managed-nvim-launcher-v2
+# managed-nvim-launcher-v""" + revision + """
 root=""" + shlex.quote(str(root)) + """
 selected=$(readlink -f -- "$root/active")
 case "$selected" in
@@ -989,7 +991,7 @@ if [ ! -x "$selected/runtime/bin/nvim" ]; then
   exit 1
 fi
 unset NVIM_APPNAME VIMINIT EXINIT LUA_INIT LUA_PATH LUA_CPATH
-export NVIM_MANAGED_GENERATION="${selected##*/}"
+""" + bytecode + """export NVIM_MANAGED_GENERATION="${selected##*/}"
 export XDG_CONFIG_HOME="$selected/config"
 export XDG_DATA_HOME="$selected/data"
 export XDG_STATE_HOME="$selected/state"
@@ -1011,10 +1013,73 @@ def path_state(path):
     return None
 
 
-def launcher_matches(home):
+def launcher_version(home):
     wrapper = home / ".local/bin/nvim"
-    return (wrapper.is_file() and not wrapper.is_symlink() and os.access(wrapper, os.X_OK)
-            and wrapper.read_text(encoding="utf-8", errors="replace") == launcher_text(root_for(home)))
+    if wrapper.is_symlink() or not wrapper.is_file() or not os.access(wrapper, os.X_OK):
+        return None
+    content = wrapper.read_bytes()
+    for legacy, version in ((False, 3), (True, 2)):
+        if content == launcher_text(root_for(home), legacy=legacy).encode("utf-8"):
+            return version
+    return None
+
+
+def upgrade_launcher(home, execute, expected):
+    root = root_for(home)
+    wrapper = home / ".local/bin/nvim"
+    regular_parents(wrapper.parent)
+    current = active_id(root)
+    version = launcher_version(home)
+    if not current or version is None:
+        raise RuntimeError("Expected an active generation and an exact managed launcher.")
+    before = path_state(wrapper)
+    new = launcher_text(root).encode("utf-8")
+    result = {"status": "preview", "generation": current, "target": str(wrapper),
+              "launcher_version": version, "before_sha256": before["sha256"],
+              "after_sha256": hashlib.sha256(new).hexdigest()}
+    if version == 3:
+        return {**result, "status": "unchanged"}
+    safety = root / "safety" / ("launcher-v2-" + before["sha256"] + ".sh")
+    stage = wrapper.with_name(".nvim-launcher-upgrade.tmp")
+    result.update(safety_backup=str(safety), temporary=str(stage))
+    if not execute:
+        return result
+    if expected != before["sha256"]:
+        raise RuntimeError("Launcher SHA-256 differs from the reviewed preview.")
+    with locked(root):
+        if active_id(root) != current or launcher_version(home) != 2 or path_state(wrapper) != before:
+            raise RuntimeError("Active generation or launcher changed before upgrade.")
+        regular_parents(safety.parent)
+        safety.parent.mkdir(exist_ok=True)
+        if not safety.exists() and not safety.is_symlink():
+            with safety.open("xb") as stream:
+                try:
+                    stream.write(launcher_text(root, legacy=True).encode("utf-8"))
+                    stream.flush()
+                    os.fchmod(stream.fileno(), before["mode"])
+                    os.fsync(stream.fileno())
+                except BaseException:
+                    if os.path.samestat(os.fstat(stream.fileno()), safety.lstat()):
+                        cleanup(safety)
+                    raise
+        if path_state(safety) != before:
+            raise RuntimeError(f"Launcher safety copy differs: {safety}")
+        with stage.open("xb") as stream:
+            try:
+                stream.write(new)
+                stream.flush()
+                os.fchmod(stream.fileno(), before["mode"])
+                os.fsync(stream.fileno())
+                if active_id(root) != current or path_state(wrapper) != before:
+                    raise RuntimeError("Active generation or launcher changed before replacement.")
+                if (not os.path.samestat(os.fstat(stream.fileno()), stage.lstat())
+                        or digest(stage) != result["after_sha256"]):
+                    raise RuntimeError("Staged launcher changed before replacement.")
+                os.replace(stage, wrapper)
+            finally:
+                if stage.exists() and os.path.samestat(os.fstat(stream.fileno()), stage.lstat()):
+                    cleanup(stage)
+    return {**result, "status": "upgraded", "launcher_version": 3}
 
 
 def activate(home, name, execute, rollback=False, expect_identity=None):
@@ -1058,7 +1123,7 @@ def activate(home, name, execute, rollback=False, expect_identity=None):
         wrapper.parent.mkdir(parents=True, exist_ok=True)
         previous_launcher = path_state(wrapper)
         text = launcher_text(root)
-        owned = launcher_matches(home)
+        owned = launcher_version(home) == 3
         if current == name and owned:
             return {"status": "unchanged", "generation": name, "active": True, "validation": "fresh", "identity": expect_identity}
         safety = root / "safety" / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8])
@@ -1154,7 +1219,9 @@ def status(home):
             check_payload(path, manifest)
         except RuntimeError as error:
             result.update(validated=False, integrity_error=str(error))
-        result["launcher_consistent"] = launcher_matches(home)
+        version = launcher_version(home)
+        result.update(launcher_consistent=version is not None, launcher_version=version,
+                      launcher_upgrade_required=version == 2)
         if not result["launcher_consistent"]:
             result.update(available=False, validated=False,
                           launcher_error="Active pointer and managed launcher are inconsistent; review and rerun activation for the same generation.")
@@ -1294,7 +1361,7 @@ def equivalent(home, source):
         check_payload(path, manifest)
     except RuntimeError as error:
         return {"equivalent": False, "generation": current, "validated": False, "reason": str(error)}
-    if not launcher_matches(home):
+    if launcher_version(home) is None:
         return {"equivalent": False, "generation": current, "validated": False, "reason": "launcher-mismatch"}
     same = same_import_payload(path, manifest, source, incoming)
     validated = manifest.get("validated", False) and manifest.get("status") == "validated"
@@ -1361,11 +1428,13 @@ def main():
     parser = argparse.ArgumentParser(description="Prepare, validate and atomically select managed Neovim generations.")
     parser.add_argument("--home", type=Path, default=Path.home())
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("status", "tools", "formatter-check", "prepare", "validate", "activate", "rollback", "backup", "stage", "restore", "equivalent", "mason-restore"):
+    for name in ("status", "tools", "formatter-check", "prepare", "validate", "activate", "rollback", "launcher-upgrade", "backup", "stage", "restore", "equivalent", "mason-restore"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--json", action="store_true")
-        if name in ("prepare", "activate", "rollback", "restore", "mason-restore"):
+        if name in ("prepare", "activate", "rollback", "launcher-upgrade", "restore", "mason-restore"):
             cmd.add_argument("--run", action="store_true", help="Perform this operation; otherwise preview only.")
+        if name == "launcher-upgrade":
+            cmd.add_argument("--expect-sha256", help="Require the exact v2 launcher hash shown by the preview.")
         if name == "prepare":
             cmd.add_argument("--keep-versions", action="store_true")
             cmd.add_argument("--generation", help="Use this candidate ID for an exact reviewed target.")
@@ -1396,6 +1465,8 @@ def main():
         regular_parents(home)
         if args.command == "status":
             result = status(home)
+        elif args.command == "launcher-upgrade":
+            result = upgrade_launcher(home, args.run, args.expect_sha256)
         elif args.command == "tools":
             result = external_tools(home)
         elif args.command == "formatter-check":

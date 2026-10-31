@@ -1,3 +1,0 @@
-alist-bin
-topiary-bin
-yay-bin

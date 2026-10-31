@@ -8,15 +8,15 @@ repository-root instructions. Changes confined here use
 
 ## Protected State
 
-- `backup.sh [--preview]` remains real by default and creates a unique
-  `data/sets/<UTC+uuid>` generation. Keep INCOMPLETE until every component and
-  manifest/hash check passes, then mark COMPLETE. Never overwrite old sets,
-  package lists or archives; failed sets remain available for diagnosis.
+- `backup.sh [--preview]` remains real by default. Build privately in a new
+  ID-named directory under `data/`. Publish only a verified COMPLETE set at
+  `data/github-current/`; replace the previous validated publication atomically.
+  On ordinary failure retain the last publication and clean the owned staging.
 - `restore.sh [--set PATH|--legacy PATH] [--preview]` remains real by default.
-  Without an exact set, prompt for a complete generation; never infer latest.
-- Keep new `data/sets/` outside Git. Existing legacy payloads, encrypted
-  archives, package lists, shell records, SSH/GPG and application credentials
-  remain protected; NAS archive rules are unchanged.
+  Offer the published set for selection; use the manifest ID for restore state.
+- Allow only named native component archives, manifest and COMPLETE into Git
+  under the published directory. Exclude all backup payloads from the scripts
+  snapshot. Git commits and pushes are separate user operations.
 - Before deployment, stage and validate every selected archive: decryption,
   internal hashes, safe member types/links, architecture and free space. Run
   the staged Research Workflow compatibility-only doctor against its matching
@@ -107,8 +107,7 @@ repository-root instructions. Changes confined here use
 - Snapshot only the managed runtime, launcher and manifests. Native
   `~/.config/Raysync` logs, credentials, research data and unfinished transfers
   remain local and outside the archive. Do not move or clear them on restore.
-- Keep the legacy ignore exception for `data/rayfile.tar.gz`; new sets remain
-  fully ignored. Stage both archive
+- Allow the verified `data/github-current/rayfile.tar.gz` in Git. Stage both archive
   and helper before any destination changes. Restore as the target user without a
   download or package mutation; preserve existing runtime and launcher in a
   unique `rayfile_restore_backup_*` directory.

@@ -9,7 +9,7 @@ SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 DOTFILES_DIR="$HOME/dot_files"
 SCRIPTS_DIR="$HOME/scripts"
 WORKFLOW_DIR="$HOME/Research_Workflow"
-SET_ROOT="$SCRIPT_DIR/data/sets"
+SET_ROOT="$SCRIPT_DIR/data"
 HELPER="$SCRIPT_DIR/backup_set.py"
 PREVIEW=false
 CORE_ARCH_PACKAGES=(python-pynvim ipython python-matplotlib python-pylatexenc)
@@ -24,7 +24,7 @@ field() { printf '%s: %s\n' "$1" "$2"; }
 step() { printf '[%s] %s\n' "$1" "$2"; }
 usage() {
   printf '%s\n' "Usage: $0 [--preview]" "" \
-    "Create a new complete Arch backup set without replacing old payloads." "" \
+    "Publish one verified Arch backup to data/github-current for Git." "" \
     "Options:" "  --preview  Show scope without reading credentials or creating files." \
     "  -h, --help Show this help." "" "Example: bash backup/archlinux/backup.sh --preview"
 }
@@ -36,9 +36,9 @@ for arg in "$@"; do
   esac
 done
 printf '\nArch Linux WSL backup\n'
-field Target "$SET_ROOT/<unique UTC ID>"
+field Target "$SET_ROOT/github-current"
 field Mode "$([ "$PREVIEW" = true ] && printf preview || printf run)"
-field Rule 'new set; no overwrite; publish COMPLETE after all checks'
+field Rule 'replace the current set atomically only after all checks pass'
 field Components 'package names+versions, system, Bash/home AGENTS, encrypted credentials+dot_files, scripts, Research_Workflow, topiary, active Neovim, Rayfile, rebuild records'
 field Excluded '.git (except Neovim plugins), old backup payloads, workspace.toml, caches/plans, Codex personal config/skills, scientific sources/data/images/models'
 field 'Editor core' "${CORE_ARCH_PACKAGES[*]}; /usr/bin/python3 and /usr/bin/ipython3, no ~/base environment"
@@ -50,13 +50,18 @@ fi
 
 umask 077
 unset GPG_PASS GPG_CONFIRM
-for command in python3 tar gpg gpgconf gpg-connect-agent pacman getent; do
+for command in python3 tar gpg gpgconf gpg-connect-agent pacman getent flock; do
   command -v "$command" >/dev/null || { status ERROR "Missing command: $command."; exit 1; }
 done
 for directory in "$DOTFILES_DIR" "$SCRIPTS_DIR" "$WORKFLOW_DIR"; do
   [ -d "$directory" ] && [ ! -L "$directory" ] || { status ERROR "Missing regular source directory: $directory."; exit 1; }
 done
-SET_DIR=$(python3 -B "$HELPER" init "$SET_ROOT")
+python3 -B "$HELPER" parents "$SET_ROOT"
+mkdir -p -- "$SET_ROOT"
+exec 8<"$SET_ROOT"
+flock -xn 8 || { status ERROR 'Another backup is running.'; exit 1; }
+SET_DIR=""
+SET_ID=""
 WORK_DIR=""
 WORK_ID=""
 GPG_HOME=""
@@ -66,7 +71,6 @@ GPG_SOCKET_ID=""
 GPG_SOCKET=""
 GPG_AGENT_PID=""
 GPG_STARTED=false
-IFS=$'\t' read -r WORK_DIR WORK_ID < <(python3 -B "$HELPER" temp-create arch-backup.)
 ensure_crypto_home() {
   if [ -z "$GPG_HOME" ]; then
     GPG_HOME="$WORK_DIR/gpg-home"
@@ -177,12 +181,26 @@ PY_GPG_PARENT
 cleanup_backup_tmp() {
   unset GPG_PASS GPG_CONFIRM
   stop_crypto_agent || { status ERROR "Isolated GPG cleanup failed; private staging retained: $WORK_DIR"; return 1; }
-  CODEX_TEMP_CLEANUP=1 python3 -B "$HELPER" cleanup "$WORK_DIR" "$WORK_ID" || return 1
-  if [ ! -f "$SET_DIR/COMPLETE" ]; then status WARN "Incomplete set retained: $SET_DIR"; fi
+  if [ -n "$WORK_DIR" ]; then
+    CODEX_TEMP_CLEANUP=1 python3 -B "$HELPER" cleanup "$WORK_DIR" "$WORK_ID" || return 1
+    WORK_DIR=""
+  fi
 }
-trap cleanup_backup_tmp EXIT
+finish_backup() {
+  local code=$?
+  trap - EXIT
+  cleanup_backup_tmp || code=1
+  if [ -n "$SET_ID" ]; then
+    CODEX_TEMP_CLEANUP=1 python3 -B "$HELPER" cleanup "$SET_DIR" "$SET_ID" || code=1
+  fi
+  exit "$code"
+}
+trap finish_backup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
+SET_DIR=$(python3 -B "$HELPER" init "$SET_ROOT")
+SET_ID=$(python3 -B "$HELPER" temp-id "$SET_DIR")
+IFS=$'\t' read -r WORK_DIR WORK_ID < <(python3 -B "$HELPER" temp-create arch-backup.)
 record() { python3 -B "$HELPER" record "$SET_DIR" "$@"; }
 archive_tree() {
   local name=$1 source=$2 encrypted=${3:-false} output
@@ -305,9 +323,11 @@ if [ -e "$TOPIARY" ] || [ -L "$TOPIARY" ]; then
   mkdir "$WORK_DIR/topiary/grammar"
   cp -p -- "$TOPIARY_GRAMMAR" "$WORK_DIR/topiary/grammar/nu.so"
   env -u LD_PRELOAD -u LD_LIBRARY_PATH LC_ALL=C ldd "$TOPIARY" >"$WORK_DIR/topiary/dependencies.txt"
-  python3 -B - "$WORK_DIR/topiary" "$TOPIARY" <<'PY_TOPIARY_CAPTURE'
+  python3 -IB - "$WORK_DIR/topiary" "$TOPIARY" "$SCRIPT_DIR" <<'PY_TOPIARY_CAPTURE'
 from pathlib import Path
 import hashlib,json,os,re,stat,subprocess,sys
+sys.path.insert(0,sys.argv[3])
+from topiary_dependencies import resolved_dependencies
 root=Path(sys.argv[1]);binary=Path(sys.argv[2]);dependencies=[]
 def digest(path):
  with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
@@ -322,17 +342,11 @@ def source(path):
    repository=next((line.partition(':')[2].strip() for line in metadata.stdout.splitlines() if line.partition(':')[0].strip()=='Repository'),None) if metadata.returncode==0 else None
    result={'manager':'pacman','package':package,'version':version[1],'repository':repository,'official_repository':repository in ('core','extra','multilib'),'evidence':'local canonical file ownership, installed version and repository metadata'}
  return result
-for line in (root/'dependencies.txt').read_text().splitlines():
- match=re.fullmatch(r'\s*(\S+)\s+=>\s+(/\S+)\s+\(0x[0-9a-f]+\)\s*',line)
- loader=re.fullmatch(r'\s*(/\S+)\s+\(0x[0-9a-f]+\)\s*',line)
- if match:name,value=match.groups();role='library'
- elif loader:value=loader[1];name=Path(value).name;role='loader'
- elif re.fullmatch(r'\s*linux-vdso\.so\.\d+\s+\(0x[0-9a-f]+\)\s*',line):continue
- else:raise SystemExit('Unresolved or unsupported Topiary dependency output.')
- path=Path(value)
- if not path.is_file():raise SystemExit('Missing Topiary system dependency.')
- dependencies.append({'name':name,'path':value,'realpath':str(path.resolve()),'sha256':digest(path),'role':role,'source':source(path)})
-if not dependencies or sum(row['role']=='loader' for row in dependencies)!=1:raise SystemExit('Unsupported Topiary dynamic loader layout.')
+try: resolved=resolved_dependencies(root/'bin/topiary',(root/'dependencies.txt').read_text(encoding='utf-8'))
+except (ValueError,OSError,RuntimeError) as error:raise SystemExit(str(error)) from None
+for row in resolved.values():
+ path=Path(row['realpath'])
+ dependencies.append({**row,'sha256':digest(path),'source':source(path)})
 value={'format':2,'executable':{'path':str(binary),'sha256':digest(binary),'mode':stat.S_IMODE(binary.stat().st_mode),'source':source(binary)},'dependencies':dependencies}
 (root/'runtime.json').write_text(json.dumps(value,indent=2)+'\n')
 PY_TOPIARY_CAPTURE
@@ -368,9 +382,9 @@ PY
 archive_tree rebuild "$WORK_DIR/rebuild"
 step 9/10 'Verify all component hashes and publish the completion marker.'
 python3 -B "$HELPER" seal "$SET_DIR" >/dev/null
-python3 -B "$HELPER" verify "$SET_DIR" >/dev/null
 cleanup_backup_tmp
-trap - EXIT
-step 10/10 'Retain the new set for the existing scripts NAS synchronization.'
-status OK "Complete backup set: $SET_DIR"
-status SKIP 'No upload, Git operation or old-payload cleanup was performed.'
+step 10/10 'Publish the verified component files for Git.'
+python3 -B "$HELPER" publish "$SET_DIR"
+SET_ID=""
+status OK "Complete backup set: $SET_ROOT/github-current (ID: ${SET_DIR##*/})"
+status SKIP 'Commit and push the recovery scripts and data/github-current together when ready.'

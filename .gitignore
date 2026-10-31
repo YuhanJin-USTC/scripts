@@ -14,15 +14,6 @@ __pycache__/
 *.tar
 *.tar.gz
 *.tgz
-!backup/archlinux/data/home_config.tar.gz
-!backup/archlinux/data/sys_config.tar.gz
-!backup/archlinux/data/nvim.tar.gz
-!backup/archlinux/data/rayfile.tar.gz
-!backup/archlinux/data/secure_data.tar.gz.gpg
-backup/archlinux/data/secure_data.tar.gz
-backup/archlinux/data/.ssh
-backup/archlinux/data/.ssh/
-backup/archlinux/data/.gnupg/
 
 *.log
 *.out
@@ -32,5 +23,21 @@ tmp/
 temp/
 .cache/
 
-# Immutable backup sets travel through the existing NAS workflow.
-backup/archlinux/data/sets/
+# Only the published backup components belong in Git.
+/backup/archlinux/pkg_lists/
+/backup/archlinux/data/*
+!/backup/archlinux/data/github-current/
+/backup/archlinux/data/github-current/*
+!/backup/archlinux/data/github-current/COMPLETE
+!/backup/archlinux/data/github-current/manifest.json
+!/backup/archlinux/data/github-current/packages.tar.gz
+!/backup/archlinux/data/github-current/system.tar.gz
+!/backup/archlinux/data/github-current/home.tar.gz
+!/backup/archlinux/data/github-current/credentials.tar.gz.gpg
+!/backup/archlinux/data/github-current/dot_files.tar.gz.gpg
+!/backup/archlinux/data/github-current/scripts.tar.gz
+!/backup/archlinux/data/github-current/research_workflow.tar.gz
+!/backup/archlinux/data/github-current/topiary.tar.gz
+!/backup/archlinux/data/github-current/nvim.tar.gz
+!/backup/archlinux/data/github-current/rayfile.tar.gz
+!/backup/archlinux/data/github-current/rebuild.tar.gz
