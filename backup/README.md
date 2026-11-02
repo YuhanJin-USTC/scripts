@@ -32,8 +32,9 @@ bash backup/archlinux/backup.sh
 Backup checks uncommitted/untracked project content and verifies local branch
 commits against the actual remote in disposable Git storage. The scripts
 backup-output directory is excluded from its source cleanliness check. Plugin
-checks permit only recognized generated parser files and help tags; personal
-plugin edits must be published first. Network/authentication failure stops
+checks inspect tracked source changes only; untracked/ignored plugin runtime
+files never block backup and are never archived. Backup does not hash the entire
+installed editor. Personal plugin source edits must still be published first. Network/authentication failure stops
 backup; cached remote-tracking refs are not proof of publication.
 
 Format 2 keeps the following small components:
@@ -49,7 +50,13 @@ Format 2 keeps the following small components:
 Projects, plugin trees, binaries and their Git directories are not archived.
 Active Neovim configuration must match the published dot_files configuration,
 except the generated active lazy-lock.json: its exact text is included in the
-small reconstruction record and applied only inside the rebuilt editor.
+small reconstruction record and applied only inside the rebuilt editor. Only
+Git-tracked Neovim configuration paths are selected; local caches, swap files
+and other untracked configuration files are not inventoried or copied.
+SSH/GPG capture uses a durable-key/configuration allowlist, excluding sockets,
+logs, known_hosts.old, random_seed, locks and incidental files. Live keyboxd
+databases require a consistent export and are refused. Topiary cache inventories
+and unrelated private npm package records are not captured.
 Research_Workflow's `workspace.toml`, local cache/plans, research data and
 Codex personal configuration remain outside the portable backup.
 

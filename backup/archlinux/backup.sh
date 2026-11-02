@@ -181,13 +181,34 @@ printf '\n'
 [ "$GPG_PASS" = "$GPG_CONFIRM" ] || { status ERROR 'Passphrases differ; no sensitive component was archived.'; exit 1; }
 unset GPG_CONFIRM
 mkdir "$WORK_DIR/credentials"
-for path in .ssh .gnupg; do
-  if [ -d "$HOME/$path" ]; then
-    [ ! -L "$HOME/$path" ] || { status ERROR "Linked credential directory refused: $path"; exit 1; }
-    tar --hard-dereference --exclude=.ssh/config --exclude='S.gpg-agent*' --exclude='S.dirmngr*' \
-      -cf - -C "$HOME" "$path" | tar --no-same-owner --same-permissions -xf - -C "$WORK_DIR/credentials"
-  fi
-done
+# Copy durable credentials only; never archive a whole runtime directory.
+python3 -B - "$HOME" "$WORK_DIR/credentials" <<'PY_CREDENTIALS'
+from pathlib import Path
+import re,shutil,sys
+home,dest=map(Path,sys.argv[1:]);selected=set()
+for directory in ('.ssh','.gnupg'):
+ if (home/directory).is_symlink():raise SystemExit('Linked credential directory refused: '+directory)
+ssh=home/'.ssh'
+for name in ('known_hosts','authorized_keys'):
+ if (ssh/name).is_file():selected.add(ssh/name)
+for key in ssh.glob('id_*'):
+ if key.is_file() and key.suffix in ('','.pub'):selected.add(key)
+for public in ssh.glob('*.pub'):
+ private=public.with_suffix('')
+ if private.is_file():selected.update((private,public))
+gpg=home/'.gnupg'
+for name in ('pubring.kbx','pubring.gpg','secring.gpg','trustdb.gpg','tofu.db','gpg.conf','gpg-agent.conf','dirmngr.conf','common.conf','sshcontrol'):
+ if (gpg/name).is_file():selected.add(gpg/name)
+for directory,suffix in (('private-keys-v1.d','key'),('openpgp-revocs.d','rev')):
+ for key in (gpg/directory).glob('*.'+suffix):
+  if re.fullmatch(r'(?:[0-9A-Fa-f]{40}|[0-9A-Fa-f]{64})\.'+suffix,key.name):selected.add(key)
+if (gpg/'public-keys.d/pubring.db').exists():
+ raise SystemExit('Keyboxd database requires a consistent export; no live database or WAL files will be archived.')
+for source in sorted(selected):
+ if source.is_symlink() or not source.resolve().is_relative_to(home.resolve()):raise SystemExit('Linked credential source refused: '+str(source))
+ target=dest/source.relative_to(home);target.parent.mkdir(parents=True,exist_ok=True)
+ shutil.copy2(source,target)
+PY_CREDENTIALS
 for path in .config/rclone/rclone.conf .codex/.env .gitconfig; do
   if [ -e "$HOME/$path" ]; then
     source=$(realpath "$HOME/$path")
@@ -207,19 +228,8 @@ for component in scripts dot_files research_workflow nvim topiary rayfile; do
   record "$component" --absent 'No snapshot; downloads.json records selected published sources or source absence.'
 done
 
-step 4/6 'Record external editor tools and private npm rebuild sources.'
-python3 -B "$SCRIPT_DIR/nvim_state.py" --home "$HOME" tools --json >"$WORK_DIR/rebuild/editor_tools.json"
-python3 -B - "$HOME" "$WORK_DIR/rebuild/npm.json" <<'PY'
-from pathlib import Path
-import json,sys
-home=Path(sys.argv[1]);packages=[]
-for base in (home/'.local/share/codex-wsl/npm/lib/node_modules',home/'.local/lib/node_modules'):
- if base.is_dir():
-  for path in list(base.glob('*/package.json'))+list(base.glob('@*/*/package.json')):
-   value=json.loads(path.read_text());name=value.get('name','unknown');version=value.get('version','unknown')
-   packages.append({'name':name,'version':version,'source':f'npm:{name}@{version}'})
-Path(sys.argv[2]).write_text(json.dumps({'npm':packages,'limits':'Private npm is a reconstruction record; entire Node/Python trees are not copied.'},indent=2)+'\n')
-PY
+step 4/6 'Record core editor tool versions and sources.'
+python3 -B "$SCRIPT_DIR/nvim_state.py" --home "$HOME" tools --sources-only --json >"$WORK_DIR/rebuild/editor_tools.json"
 archive_tree rebuild "$WORK_DIR/rebuild"
 step 5/6 'Verify all component hashes and publish the completion marker.'
 python3 -B "$HELPER" seal "$SET_DIR" >/dev/null

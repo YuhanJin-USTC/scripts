@@ -17,7 +17,11 @@ parallel instruction files. Usage belongs in `backup/README.md`.
   never commit/push for the user or accept stale tracking refs as proof.
 - Keep accepted runtime/plugin/parser versions, tool receipts and checksums.
   Refuse unpublished personal edits and missing exact source provenance.
-  Generated parser libraries/revision files and help tags are not personal edits.
+  Inspect tracked plugin source changes only; never scan untracked/ignored
+  plugin runtime files or require whole-installation hashes during backup.
+  Select Neovim configuration from Git-tracked paths plus the active lockfile.
+  Capture credentials through explicit durable-file selectors, not whole SSH/GPG
+  runtime directories. Omit cache inventories and unrelated private npm records.
 - Build privately and publish atomically. A failed invocation removes only its
   incomplete set and retains the last complete publication. Existing tracked
   format-1 payloads await their separately approved history/data cleanup.

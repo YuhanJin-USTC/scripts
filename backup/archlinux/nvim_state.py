@@ -687,7 +687,7 @@ def check_formatter_tools(home, records):
             "functional_validation": "requires separate real formatter and linter integration checks"}
 
 
-def external_tools(home):
+def external_tools(home, *, include_runtime_files=True):
     env_path = str(home / ".local/share/nvim/mason/bin") + os.pathsep + os.environ.get("PATH", "")
     result = {}
     for name in ("latex2text", "python3", "ipython3", "clangd", "pylsp", "stylua", "clang-format", "tree-sitter", "make", "cc", "topiary"):
@@ -704,9 +704,10 @@ def external_tools(home):
         result[name] = info
     topiary_config = home / ".config/topiary"
     topiary_cache = Path(os.environ.get("NVIM_EXTERNAL_CACHE_HOME") or os.environ.get("XDG_CACHE_HOME") or str(home / ".cache")) / "topiary"
-    result["topiary"].update(configuration=files_digest(topiary_config) if topiary_config.is_dir() else None,
-                             grammar_cache_path=str(topiary_cache),
-                             grammar_cache=files_digest(topiary_cache) if topiary_cache.is_dir() else None)
+    if include_runtime_files:
+        result["topiary"].update(configuration=files_digest(topiary_config) if topiary_config.is_dir() else None,
+                                 grammar_cache_path=str(topiary_cache),
+                                 grammar_cache=files_digest(topiary_cache) if topiary_cache.is_dir() else None)
     packages = {}
     for name in CORE_ARCH_PACKAGES:
         try:
@@ -1451,6 +1452,8 @@ def main():
     for name in ("status", "tools", "formatter-check", "prepare", "validate", "activate", "rollback", "launcher-upgrade", "backup", "stage", "restore", "equivalent", "mason-restore"):
         cmd = commands.add_parser(name)
         cmd.add_argument("--json", action="store_true")
+        if name == 'tools':
+            cmd.add_argument('--sources-only', action='store_true', help='Omit local configuration/cache inventories.')
         if name in ("prepare", "activate", "rollback", "launcher-upgrade", "restore", "mason-restore"):
             cmd.add_argument("--run", action="store_true", help="Perform this operation; otherwise preview only.")
         if name == "launcher-upgrade":
@@ -1500,7 +1503,7 @@ def main():
         elif args.command == "launcher-upgrade":
             result = upgrade_launcher(home, args.run, args.expect_sha256)
         elif args.command == "tools":
-            result = external_tools(home)
+            result = external_tools(home, include_runtime_files=not args.sources_only)
         elif args.command == "formatter-check":
             result = check_formatter_tools(home, read_json(args.tools_json))
         elif args.command == "prepare":
