@@ -28,8 +28,8 @@ COMPONENTS = ('packages', 'system', 'home', 'credentials', 'dot_files', 'scripts
 CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 
 
-def run_process(args, *, timeout, **kwargs):
-    process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+def run_process(args, *, timeout, stderr=subprocess.PIPE, **kwargs):
+    process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=stderr,
                                text=True, start_new_session=True, **kwargs)
     try:
         stdout, stderr = process.communicate(timeout=timeout)

@@ -246,6 +246,7 @@ def build_editor(recipe, config, target, home):
         if nvim.files_digest(candidate / 'config/nvim') != record['config_sha256']:
             raise RuntimeError('Recorded active lockfile/configuration checksum differs.')
         runtime = record['runtime_source']
+        print(f'[nvim] Fetching {runtime["tag"]} and {len(record["plugins"])} pinned plugins.', file=sys.stderr, flush=True)
         archive = candidate / 'runtime.tar.gz'
         download(runtime['url'], archive, runtime['archive_sha256'])
         unpack = candidate / 'unpack'

@@ -98,7 +98,9 @@ no per-file replacement questions. GPG/sudo authentication remains necessary.
 4. Rebuild editor and Topiary candidates and download Rayfile in staging before
    deploying home configuration. The results table shows selected tools as
    `pending` until this stage runs. Optional tools with a null source record
-   show `skipped`. Missing pins/downloads stop recovery.
+   show `skipped`. Treesitter reports progress to the terminal and builds with
+   two jobs. Each grammar archive can retry up to three times, including after
+   a truncated TLS transfer. Exhausted downloads or missing pins stop recovery.
 5. Deploy project/configuration changes and Stow links. Existing ignored local
    files and device settings remain in existing checkouts. Effective encrypted
    Git/rclone content must agree with its published Stow source; disagreement

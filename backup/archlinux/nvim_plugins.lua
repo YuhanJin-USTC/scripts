@@ -1,5 +1,5 @@
 local BUILD_TIMEOUT = 300000
-local PARSER_TIMEOUT = 600000
+local PARSER_TIMEOUT = 20 * 60 * 1000
 local BUILD_COMMANDS = {
   LuaSnip = 'make install_jsregexp',
   ['telescope-fzf-native.nvim'] = 'make',
@@ -190,9 +190,15 @@ local function build_plugins(plugins, names, treesitter, manifest)
     end
   end
   if #manifest.parsers > 0 then
-    io.stdout:write('  -> Building Treesitter parsers...\n')
-    local task = treesitter.install(manifest.parsers, { force = not manifest.reuse_parser_artifacts, max_jobs = 4, summary = true })
-    if task:wait(PARSER_TIMEOUT) ~= true then
+    io.stderr:write('Building pinned Treesitter parsers (2 jobs)...\n')
+    local old_path = vim.env.PATH
+    if vim.env.NVIM_PARSER_DOWNLOAD_BIN then
+      vim.env.PATH = vim.env.NVIM_PARSER_DOWNLOAD_BIN .. ':' .. old_path
+    end
+    local task = treesitter.install(manifest.parsers, { force = not manifest.reuse_parser_artifacts, max_jobs = 2, summary = true })
+    local installed = task:wait(PARSER_TIMEOUT)
+    vim.env.PATH = old_path
+    if installed ~= true then
       fail('Treesitter parser installation failed.')
     end
   end

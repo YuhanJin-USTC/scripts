@@ -37,7 +37,8 @@ def run(args, **kwargs):
     from backup_set import run_process
     result = run_process([str(a) for a in args], timeout=kwargs.pop("timeout", 900), **kwargs)
     if result.returncode:
-        raise RuntimeError(f"{Path(args[0]).name} failed ({result.returncode}): {result.stderr.strip()}")
+        detail = (result.stderr or '').strip() or 'see the build output above'
+        raise RuntimeError(f"{Path(args[0]).name} failed ({result.returncode}): {detail}")
     return result.stdout.strip()
 
 
@@ -380,6 +381,19 @@ def helper_run(path, home, mode, helper=HELPER, sandbox=False, initialize=False)
         command = ["/usr/bin/python3", "-B", "-c", INTERACTION_CHECK, str(path)]
     elif mode == "version":
         command = [str(path / "runtime/bin/nvim"), "--version"]
+    if mode == 'build' and not sandbox:
+        # The pinned Treesitter installer invokes curl by name.
+        bin_dir = Path(tempfile.mkdtemp(prefix='.parser-download-', dir=path))
+        try:
+            curl = bin_dir / 'curl'
+            curl.write_text('#!/bin/sh\nexec /usr/bin/curl "$@" --proto =https --proto-redir =https '
+                            '--retry 3 --retry-all-errors '
+                            '--connect-timeout 15 --max-time 90 --retry-max-time 120\n', encoding='utf-8')
+            curl.chmod(0o700)
+            env['NVIM_PARSER_DOWNLOAD_BIN'] = str(bin_dir)
+            return run(command, env=env, timeout=1800, stderr=None)
+        finally:
+            cleanup(bin_dir)
     if not sandbox:
         return run(command, env=env, timeout=1800)
     if not shutil.which("bwrap"):

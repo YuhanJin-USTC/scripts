@@ -78,7 +78,9 @@ parallel instruction files. Usage belongs in `backup/README.md`.
 - `nvim_state.py` remains the editor lifecycle and `mason_tools.py` internal.
   Reuse the explicit plugin_specs inventory. Preserve 23 parser languages,
   grammar revisions, native builds and real isolated editor acceptance.
-- Restore builds at pinned sources and validates before activation. Standalone
+- Restore builds at pinned sources and validates before activation. Retry
+  interrupted parser downloads per archive with a bounded retry budget. Keep
+  parser progress visible and TLS verification on. Standalone
   prepare/activate/rollback retain their existing explicit lifecycle gates and
   historical generations. Invocation-created failed restore candidates are
   cleaned; existing generations are never swept.
