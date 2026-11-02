@@ -30,7 +30,7 @@ parallel instruction files. Usage belongs in `backup/README.md`.
 
 ## Restore contract
 
-- `restore.sh [--set PATH|--legacy PATH] [--keep-local-workflow] [--preview]`
+- `restore.sh [--set PATH|--legacy PATH] [--keep-local-workflow] [--use-tool-proxy] [--preview]`
   is real by default; no path selects the fixed current set. Keep format-1
   complete-set reading and legacy exit-3 incomplete reporting.
 - A restore command authorizes scoped replacements, selected package operations,
@@ -78,9 +78,11 @@ parallel instruction files. Usage belongs in `backup/README.md`.
 - `nvim_state.py` remains the editor lifecycle and `mason_tools.py` internal.
   Reuse the explicit plugin_specs inventory. Preserve 23 parser languages,
   grammar revisions, native builds and real isolated editor acceptance.
-- Restore builds at pinned sources and validates before activation. Retry
-  interrupted parser downloads per archive with a bounded retry budget. Keep
-  parser progress visible and TLS verification on. Standalone
+- Restore builds at pinned sources and validates before activation. Use bounded
+  retries for interrupted archive downloads and remote Git fetches. Report the
+  affected artifact and stream parser progress. Preserve TLS, checksum and Mason
+  redirect-host checks. The restore option for tool proxy routing is opt-in.
+  Standalone
   prepare/activate/rollback retain their existing explicit lifecycle gates and
   historical generations. Invocation-created failed restore candidates are
   cleaned; existing generations are never swept.

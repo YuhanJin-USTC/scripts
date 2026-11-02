@@ -17,7 +17,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import urllib.request
 import uuid
 
 
@@ -520,10 +519,20 @@ def optional_source(home):
         return {str(p): files_digest(p) if p.is_dir() else None for p in paths}
 
 
-def download(url, target):
-    request = urllib.request.Request(url, headers={"User-Agent": "managed-nvim-lifecycle"})
-    with urllib.request.urlopen(request, timeout=120) as response, target.open("xb") as stream:
-        shutil.copyfileobj(response, stream)
+def download(url, target, *, expected=None, label=None):
+    from backup_set import read_https
+    label = label or url.rsplit('/', 1)[-1]
+    with target.open("x+b") as stream:
+        try:
+            read_https(url, stream, label)
+            if expected is not None:
+                stream.seek(0)
+                if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
+                    raise RuntimeError(f'{label}: SHA256 mismatch.')
+        except BaseException:
+            if os.path.samestat(os.fstat(stream.fileno()), target.lstat()):
+                cleanup(target)
+            raise
 
 
 def acquire_runtime(path, tag=None):

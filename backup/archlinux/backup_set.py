@@ -4,18 +4,24 @@ import argparse
 import ctypes
 from datetime import datetime, timezone
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path, PurePosixPath
 import platform
 import re
 import signal
+import socket
+import ssl
 import shutil
 import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
+import urllib.request
 import uuid
 
 FORMAT = 1
@@ -44,6 +50,52 @@ def run_process(args, *, timeout, stderr=subprocess.PIPE, **kwargs):
         except ProcessLookupError:
             process.communicate()
         raise
+
+
+def retry_transfer(label, operation):
+    for attempt, delay in enumerate((1, 2, 4, 0), 1):
+        try:
+            return operation()
+        except (OSError, http.client.HTTPException, RuntimeError, ValueError) as error:
+            if isinstance(error, urllib.error.HTTPError):
+                transient = error.code in (408, 429, 500, 502, 503, 504)
+                error.close()
+            else:
+                reason = error.reason if isinstance(error, urllib.error.URLError) else error
+                transient = isinstance(reason, (ConnectionError, TimeoutError, socket.gaierror,
+                                                ssl.SSLEOFError, http.client.IncompleteRead))
+            if not transient or not delay:
+                raise RuntimeError(f'{label} (attempt {attempt}/4): {error}') from error
+            print(f'[WARN] {label}: {error}. Retry {attempt}/3 in {delay}s.', file=sys.stderr, flush=True)
+        time.sleep(delay)
+
+
+class _HTTPSRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.lower().startswith('https://'):
+            raise ValueError('Refused a non-HTTPS download redirect.')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def read_https(source, stream, label, *, opener=None, limit=None):
+    if not source.startswith('https://'):
+        raise ValueError('Expected an HTTPS download.')
+    opener = opener or urllib.request.build_opener(_HTTPSRedirect())
+    request = urllib.request.Request(source, headers={'User-Agent': 'arch-config-recovery/2'})
+
+    def receive():
+        stream.seek(0)
+        stream.truncate()
+        with opener.open(request, timeout=120) as response:
+            length = response.headers.get('Content-Length')
+            for chunk in iter(lambda: response.read(256 * 1024), b''):
+                if limit is not None and stream.tell() + len(chunk) > limit:
+                    raise ValueError(f'{label} exceeds its download size limit.')
+                stream.write(chunk)
+            if length is not None and stream.tell() != int(length):
+                raise ConnectionError(f'incomplete response ({stream.tell()}/{length} bytes)')
+
+    retry_transfer(label, receive)
 
 
 def fail(message):

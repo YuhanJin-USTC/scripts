@@ -78,6 +78,8 @@ bash backup/archlinux/restore.sh --preview
 sudo bash backup/archlinux/restore.sh
 sudo bash backup/archlinux/restore.sh --set /absolute/path/to/github-current
 sudo bash backup/archlinux/restore.sh --keep-local-workflow
+# If this device has the configured local HTTP proxy listening:
+sudo bash backup/archlinux/restore.sh --use-tool-proxy
 ```
 
 Without `--set`, the fixed `data/github-current` set is selected automatically.
@@ -100,7 +102,13 @@ no per-file replacement questions. GPG/sudo authentication remains necessary.
    `pending` until this stage runs. Optional tools with a null source record
    show `skipped`. Treesitter reports progress to the terminal and builds with
    two jobs. Each grammar archive can retry up to three times, including after
-   a truncated TLS transfer. Exhausted downloads or missing pins stop recovery.
+   a truncated TLS transfer. Runtime archives, the Topiary crate, the Rayfile
+   client, the Mason registry and remote Git fetches also retry transient
+   transport failures up to three times. Each retry identifies the artifact or
+   commit. HTTP authentication, missing assets and checksum failures stop these
+   transfers. Use `--use-tool-proxy` for tool downloads when the device has an
+   HTTP proxy at `127.0.0.1:7890`. The option also applies to HTTP(S) plugin
+   fetches, grammar downloads and Mason reconstruction.
 5. Deploy project/configuration changes and Stow links. Existing ignored local
    files and device settings remain in existing checkouts. Effective encrypted
    Git/rclone content must agree with its published Stow source; disagreement

@@ -15,6 +15,7 @@ CURRENT_SET="$SCRIPT_DIR/data/github-current"
 HELPER="$SCRIPT_DIR/backup_set.py"
 PREVIEW=false
 WORKFLOW_ARGS=()
+TOOL_PROXY_ENV=()
 SET_DIR=""
 LEGACY_DIR=""
 CORE_ARCH_PACKAGES=(python-pynvim ipython python-matplotlib python-pylatexenc)
@@ -35,12 +36,13 @@ status() {
 field() { printf '%s: %s\n' "$1" "$2"; }
 step() { status "$1" "$2"; }
 usage() {
-  printf '%s\n' "Usage: $0 [--set PATH | --legacy PATH] [--keep-local-workflow] [--preview]" "" \
+  printf '%s\n' "Usage: $0 [--set PATH | --legacy PATH] [--keep-local-workflow] [--use-tool-proxy] [--preview]" "" \
     "Restore an explicitly selected Arch backup; real mode is the default." \
     "Without a path, use data/github-current. Managed replacements run without confirmation." "" \
     "Options:" "  --set PATH    Published data/github-current or a complete ID-named set." \
     "  --legacy PATH Old archlinux directory containing data/ and pkg_lists/." \
     "  --keep-local-workflow  Keep the complete existing Research_Workflow checkout." \
+    "  --use-tool-proxy  Route tool HTTP(S) downloads through $PROXY_URL." \
     "  --preview     Compare public backup records and local workflow authority without decryption." \
     "  -h, --help    Show this help." "" \
     "Examples:" "  bash backup/archlinux/restore.sh --preview" \
@@ -51,6 +53,7 @@ while [ "$#" -gt 0 ]; do
     -h|--help) usage; exit 0 ;;
     --preview) PREVIEW=true; shift ;;
     --keep-local-workflow) WORKFLOW_ARGS=(--keep-local-workflow); shift ;;
+    --use-tool-proxy) TOOL_PROXY_ENV=(http_proxy="$PROXY_URL" https_proxy="$PROXY_URL" no_proxy="localhost,127.0.0.1,::1"); shift ;;
     --set|--legacy)
       [ "$#" -ge 2 ] && [[ "$2" != --* ]] || { status ERROR "$1 requires a path."; exit 2; }
       [ -z "$SET_DIR$LEGACY_DIR" ] || { status ERROR 'Choose exactly one backup source.'; exit 2; }
@@ -70,6 +73,7 @@ field 'Base packages' 'base-devel git stow sudo tar openssh gnupg python bubblew
 field Packages 'Pacman system upgrade/install and AUR install; observed old versions are a rebuild record, not a downgrade promise'
 field Repositories 'require published local work; download pinned project commits; never reset scripts'
 field Proxy "AUR HTTP=$PROXY_URL SOCKS=$SOCKS_URL; package fallback=https://geo.mirror.pkgbuild.com"
+if [ "${#TOOL_PROXY_ENV[@]}" -gt 0 ]; then field 'Tool downloads' "HTTP(S) proxy $PROXY_URL"; fi
 field 'AUR bootstrap' 'if yay is missing: https://aur.archlinux.org/yay-bin.git, new private build directory, target-user makepkg; included in this restore command'
 if [ -z "$SET_DIR$LEGACY_DIR" ]; then SET_DIR="$CURRENT_SET"; fi
 field Source "${SET_DIR:-$LEGACY_DIR}"
@@ -725,7 +729,7 @@ step 4/8 'Rebuild pinned tools and restore home configuration.'
 if [ "$SET_FORMAT" = 2 ]; then
   chown -R "$TARGET_USER:$TARGET_USER" "$USER_STAGE"
   run_rebuild() {
-    sudo -H -u "$TARGET_USER" env TMPDIR="$USER_STAGE/tmp" python3 -B "$USER_STAGE/rebuild_tools.py" "$@" --home "$TARGET_HOME" --recipe "$USER_STAGE/downloads.json" --work "$USER_STAGE/build"
+    sudo -H -u "$TARGET_USER" env "${TOOL_PROXY_ENV[@]}" TMPDIR="$USER_STAGE/tmp" python3 -B "$USER_STAGE/rebuild_tools.py" "$@" --home "$TARGET_HOME" --recipe "$USER_STAGE/downloads.json" --work "$USER_STAGE/build"
   }
   mkdir -p "$USER_STAGE/tmp"
   chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/tmp"
@@ -902,7 +906,7 @@ if [ "$NVIM_READY" = true ]; then
   sudo -H -u "$TARGET_USER" env ARCH_RESTORE_TRANSACTION="$USER_STAGE/transaction" python3 -B "$USER_STAGE/nvim_state.py" --home "$TARGET_HOME" \
     mason-restore "$USER_STAGE/editor_tools.json" "$USER_STAGE/nvim" "$USER_STAGE/nvim_plugins.lua" --json >"$WORK_DIR/mason-preview.json"
   mason_identity=$(python3 -B -c 'import json,sys;v=json.load(open(sys.argv[1]));assert v["status"]=="preview";print(v["identity"])' "$WORK_DIR/mason-preview.json")
-  sudo -H -u "$TARGET_USER" env ARCH_RESTORE_TRANSACTION="$USER_STAGE/transaction" python3 -B "$USER_STAGE/nvim_state.py" --home "$TARGET_HOME" \
+  sudo -H -u "$TARGET_USER" env "${TOOL_PROXY_ENV[@]}" ARCH_RESTORE_TRANSACTION="$USER_STAGE/transaction" python3 -B "$USER_STAGE/nvim_state.py" --home "$TARGET_HOME" \
     mason-restore "$USER_STAGE/editor_tools.json" "$USER_STAGE/nvim" "$USER_STAGE/nvim_plugins.lua" --expect-identity "$mason_identity" --run --json >"$WORK_DIR/mason-result.json"
   python3 -B - "$WORK_DIR/mason-result.json" <<'PY_MASON_RESULT'
 import json,sys

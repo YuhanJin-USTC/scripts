@@ -1,6 +1,7 @@
 """Capture published sources and rebuild downloads inside caller-owned staging."""
 
 import argparse
+import io
 import json
 import os
 import platform
@@ -11,7 +12,6 @@ import signal
 import subprocess
 import sys
 import tarfile
-import urllib.request
 
 import backup_set as sets
 import nvim_state as nvim
@@ -39,6 +39,21 @@ def git(path, *args):
                env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0', 'GIT_TERMINAL_PROMPT': '0'})
 
 
+def remote_fetch(label, *args):
+    def fetch():
+        try:
+            return run(['git', '-c', 'core.hooksPath=/dev/null', *args],
+                       env={**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'LC_ALL': 'C'})
+        except RuntimeError as error:
+            if re.search(r'early EOF|unexpected (?:EOF|disconnect)|remote end hung up|'
+                         r'connection (?:reset|closed|refused)|timed out|could not resolve host|'
+                         r'curl (?:5|6|7|16|18|28|52|55|56|92)\b|returned error: (?:408|429|50[0234])\b',
+                         str(error), re.IGNORECASE):
+                raise ConnectionError(str(error)) from error
+            raise
+    return sets.retry_transfer(label, fetch)
+
+
 def url(value):
     if not isinstance(value, str) or not re.fullmatch(r'(?:https://github.com/|git@github.com:)[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?', value):
         raise ValueError('Expected a GitHub HTTPS or SSH repository URL without credentials.')
@@ -64,22 +79,17 @@ def published(path, scratch, *, plugin=False, scripts=False):
         run(['git', 'init', '--bare', '-q', probe])
     for revision in sorted(set([commit, *refs])):
         try:
-            run(['git', '-c', 'core.hooksPath=/dev/null', '--git-dir', probe, 'fetch', '--quiet',
-                 '--depth=1', '--filter=blob:none', '--no-tags', '--', remote, revision],
-                env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
+            remote_fetch(f'{path.name} publication check {revision[:12]}', '--git-dir', probe,
+                         'fetch', '--quiet', '--depth=1', '--filter=blob:none', '--no-tags', '--', remote, revision)
         except RuntimeError as error:
             raise RuntimeError(f'{path}: commit {revision[:12]} is not confirmed on origin; push it or fix network access. {error}') from None
     return {'url': remote, 'commit': commit, 'branch': branch}
 
 
-def download(source, target, expected):
+def download(source, target, expected, *, label=None):
     if not isinstance(source, str) or not source.startswith('https://') or not isinstance(expected, str) or not re.fullmatch(r'[0-9a-f]{64}', expected):
         raise ValueError('Download requires HTTPS and a SHA256 pin.')
-    request = urllib.request.Request(source, headers={'User-Agent': 'arch-config-restore/2'})
-    with urllib.request.urlopen(request, timeout=120) as response, target.open('xb') as stream:
-        shutil.copyfileobj(response, stream)
-    if sets.digest(target) != expected:
-        raise RuntimeError(f'Download changed: {source}; expected SHA256 {expected}.')
+    nvim.download(source, target, expected=expected, label=label)
 
 
 def clone(record, target, source=None):
@@ -97,9 +107,13 @@ def clone(record, target, source=None):
         refs.append(f'refs/heads/{branch}:refs/remotes/origin/{branch}')
     # Projects need ancestry for fast-forward checks. Plugins need just the pin.
     depth = [] if 'branch' in record else ['--depth=1']
-    operation = 'fetch from local checkout' if source else 'fetch from origin'
+    fetch_args = ('fetch', '--no-tags', '--no-recurse-submodules', *depth, '--', source or 'origin', *refs)
+    if not source:
+        remote_fetch(f'{target.name} fetch from origin {commit[:12]}', '-C', target, *fetch_args)
+    operation = 'fetch from local checkout'
     try:
-        git(target, 'fetch', '--no-tags', '--no-recurse-submodules', *depth, '--', source or 'origin', *refs)
+        if source:
+            git(target, *fetch_args)
         operation = 'checkout'
         git(target, 'checkout', '--quiet', *(['-B', branch] if branch else ['--detach']), commit)
         if git(target, 'rev-parse', 'HEAD') != commit:
@@ -163,10 +177,10 @@ def capture(home, scratch):
         if not match:
             raise RuntimeError('Topiary requires a released topiary-cli version.')
         version = match[1]
-        request = urllib.request.Request('https://crates.io/api/v1/crates/topiary-cli/' + version,
-                                         headers={'User-Agent': 'arch-config-backup/2'})
-        with urllib.request.urlopen(request, timeout=30) as response:
-            package = json.load(response)['version']
+        with io.BytesIO() as response:
+            sets.read_https('https://crates.io/api/v1/crates/topiary-cli/' + version, response,
+                            'Topiary crate metadata ' + version, limit=2 * 1024 * 1024)
+            package = json.loads(response.getvalue())['version']
         topiary = {'version': version, 'url': f'https://static.crates.io/crates/topiary-cli/topiary-cli-{version}.crate',
                    'sha256': package['checksum'], 'grammar_revision': NU_REVISION}
     client = None
@@ -246,18 +260,20 @@ def build_editor(recipe, config, target, home):
         if nvim.files_digest(candidate / 'config/nvim') != record['config_sha256']:
             raise RuntimeError('Recorded active lockfile/configuration checksum differs.')
         runtime = record['runtime_source']
-        print(f'[nvim] Fetching {runtime["tag"]} and {len(record["plugins"])} pinned plugins.', file=sys.stderr, flush=True)
+        label = f'Neovim {runtime["tag"]} runtime ({runtime["url"].rsplit("/", 1)[-1]})'
+        print(f'[nvim] Downloading {label}', file=sys.stderr, flush=True)
         archive = candidate / 'runtime.tar.gz'
-        download(runtime['url'], archive, runtime['archive_sha256'])
+        download(runtime['url'], archive, runtime['archive_sha256'], label=label)
         unpack = candidate / 'unpack'
         nvim.safe_extract(archive, unpack)
         roots = list(unpack.iterdir())
         if len(roots) != 1 or not (roots[0] / 'bin/nvim').is_file():
             raise RuntimeError('Unexpected Neovim runtime layout.')
         roots[0].rename(candidate / 'runtime')
-        for name, plugin in record['plugins'].items():
+        for index, (name, plugin) in enumerate(record['plugins'].items(), 1):
             if not nvim.NAME.fullmatch(name):
                 raise ValueError('Invalid plugin name.')
+            print(f'[nvim {index}/{len(record["plugins"])}] {name} {plugin["commit"][:12]}', file=sys.stderr, flush=True)
             clone(plugin, candidate / 'data/nvim/lazy' / name)
         manifest = {**record, 'format': 2, 'generation': 'downloaded', 'status': 'prepared',
                     'validated': False, 'keep_versions': True}
@@ -285,7 +301,7 @@ def build_editor(recipe, config, target, home):
 def build_topiary(record, config, target):
     target.mkdir()
     archive = target / 'source.crate'
-    download(record['url'], archive, record['sha256'])
+    download(record['url'], archive, record['sha256'], label='Topiary crate ' + record['version'])
     nvim.safe_extract(archive, target / 'source')
     source = target / 'source' / ('topiary-cli-' + record['version'])
     if not (source / 'Cargo.lock').is_file():
@@ -314,7 +330,7 @@ def stage_rayfile(record, target):
         raise RuntimeError('Unknown Rayfile download pin.')
     target.mkdir()
     archive = target / 'download.tar.gz'
-    download(record['source_url'], archive, record['archive_sha256'])
+    download(record['source_url'], archive, record['archive_sha256'], label='Rayfile client ' + record['version'])
     runtime = target / 'rayfile-runtime'
     runtime.mkdir()
     with tarfile.open(archive, 'r:gz') as stream:

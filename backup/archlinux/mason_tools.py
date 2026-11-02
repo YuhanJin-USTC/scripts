@@ -465,11 +465,12 @@ class _HTTPSRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _registry_specs(registry, expected):
+    from backup_set import read_https
     url = "https://github.com/mason-org/mason-registry/releases/download/" + registry["version"] + "/registry.json.zip"
-    request = urllib.request.Request(url, headers={"User-Agent": "nvim-mason-restore"})
-    with urllib.request.build_opener(_HTTPSRedirect()).open(request, timeout=90) as response:
-        archive = response.read(32 * 1024 * 1024 + 1)
-    return _decode_registry(archive, registry, expected)
+    with io.BytesIO() as archive:
+        read_https(url, archive, 'Mason registry ' + registry['version'],
+                   opener=urllib.request.build_opener(_HTTPSRedirect()), limit=32 * 1024 * 1024)
+        return _decode_registry(archive.getvalue(), registry, expected)
 
 
 def _decode_registry(archive, registry, expected):
