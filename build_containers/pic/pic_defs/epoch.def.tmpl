@@ -1,0 +1,38 @@
+Bootstrap: localimage
+From: {{ENV_IMAGE}}
+
+%files
+
+    {{TAR_NAME}} {{TAR_TARGET}}
+
+%post
+
+    EPOCH_COMPILER="{{EPOCH_COMPILER}}"
+
+    BUILD_DIR="{{BUILD_DIR}}"
+    mkdir -p $BUILD_DIR
+    cd $BUILD_DIR
+
+    tar -zxvf {{TAR_TARGET}} --strip-components 1
+    rm {{TAR_TARGET}}
+
+    cd {{EPOCH_DIM}}
+
+    echo "Cleaning up old build files..."
+    make COMPILER=$EPOCH_COMPILER clean
+
+    echo "Starting compilation..."
+    make COMPILER=$EPOCH_COMPILER -j{{JOBS}}
+
+    cd ..
+    rm -rf {{CLEAN_ITEMS}}
+
+%environment
+
+    export FI_PROVIDER=verbs
+    export I_MPI_FABRICS=shm:ofi
+    export PATH={{BUILD_DIR}}/{{EPOCH_DIM}}/bin:$PATH
+
+%runscript
+
+    exec {{EXEC_NAME}} "$@"

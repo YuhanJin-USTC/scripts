@@ -1,0 +1,284 @@
+# scripts
+
+Personal research-automation toolkit for laser-plasma theory, PIC simulation,
+data movement, workstation maintenance, and local media processing.
+
+This is a script-first repository, not a portable software package. Intentional
+external paths, cluster aliases, image names, target records, and job counts
+remain explicit so daily research workflows are easy to inspect and edit.
+
+## Design
+
+- Keep the locked workflow domains small and explicit, with independent PIC
+  build, post-processing build, runtime, sync, and maintenance boundaries.
+- Keep public flags, safety defaults, outputs, and configured research paths
+  visible.
+- Preview external changes where the workflow supports it.
+- Protect credentials, backup payloads, source trees, simulation data, and
+  reproducibility.
+- Keep PIC image builds, post-processing image builds, PIC runs, and cluster
+  Jupyter sessions separate.
+
+## Environment
+
+The configured environment is:
+
+- Arch Linux under WSL.
+- Repository path: `/home/yuhanjin/scripts`.
+- Windows mounts: `/mnt/c` and `/mnt/d`.
+- NAS mounts: `/mnt/y` and `/mnt/z/金虞焓`.
+- SSH aliases: `hfcluster`, `tycluster`, and `wzcluster`.
+
+There is no repository-wide installer or dependency command. Install only the
+tools required by the workflow being used.
+
+| Domain | Required tools or resources |
+| --- | --- |
+| Core scripts | Bash, Nushell, standard Linux utilities |
+| Container builds | Apptainer or Singularity, `sudo`, configured source and image paths |
+| PIC runs | Apptainer and the configured SIF images |
+| Cluster Jupyter sessions | Bash, OpenSSH, Python 3, curl, `cmd.exe`, Slurm, Singularity 3.7.3, and the configured Jupyter SIF |
+| MATLAB Figure Browser | Bash, Node 26, the existing app build, and WSL browser integration |
+| NAS and cluster transfer | `rsync`, OpenSSH, configured mounts and SSH aliases |
+| Cluster fast transfer | Reviewed `rayfile-c`, verified portal endpoint and operation-specific token |
+| Arch backup and restore | `tar`, GPG, Git, Stow, Arch package tools |
+| iWAN routes | WSL, `powershell.exe`, `wslpath`, Panabit iWAN 2.1.3 |
+| ASR and translation | Singularity, NVIDIA GPU access in WSL, local model images |
+| Subtitle burn-in | FFmpeg in addition to the ASR requirements |
+
+## Safety Model
+
+The scripts do not share one execution default. Check the mode before running
+any command.
+
+| Workflow | Default | Real action |
+| --- | --- | --- |
+| `update/update_archlinux.sh` | Preview system/editor stages | Add `--run`; editor activation remains separate |
+| `update/update_iwan_routes.sh` | Preview | Exit iWAN, then add `--run` |
+| `sync/sync_files.nu` | Preview | Add `--run` |
+| `sync/windows2cluster.nu` | Preview | Add `--run` |
+| `sync/cluster2windows.nu` | Preview | Add `--run` |
+| `sync/fast_cluster2windows.nu` | Local filter plan | HF/TY/WZ `--run` uses SSH metadata and Rayfile payloads; only WZ has live fixture acceptance |
+| `sync/fast_windows2cluster.nu` | Local command preview | Add `--run` |
+| `clean/clean_files.nu` | Preview | Add `--run`, then type `DELETE` |
+| Container image builders | **Real build** | Add `--dry-run` to preview |
+| PIC image smoke tests | **Real test** | Add `--dry-run` to preview |
+| Cluster Jupyter lifecycle | **Real** | Use explicit `start`, `connect`, `status`, or `stop` |
+| MATLAB Figure Browser | **Real, foreground** | Start or reuse the app; `--no-open` suppresses browser launch |
+| Arch backup and restore | **Real** | `--preview` inspects the documented subset; restore requires an exact set or interactive choice |
+| Key transfer, Git update, PIC run, ASR/MT | **Real** | No dry run |
+
+A preview can still read external state. NAS and cluster rsync previews, iWAN
+configuration reads, and DNS lookups require an explicitly scoped request and
+available external paths or services. Do not use a real update, transfer,
+backup, restore, key deployment, Git mutation, container build, PIC run, or
+media pipeline merely to validate source changes.
+
+Important boundaries:
+
+- Sync scripts do not use `rsync --delete`.
+- Cluster upload excludes common large outputs unless `--all-files` is used.
+- Cleanup deletes only explicit junk after typed confirmation.
+- Container builds use `build --force` and may replace an existing SIF.
+- Cluster Jupyter sessions use Slurm compute nodes, preserve token
+  authentication, and never upload the configured SIF automatically.
+- Backup publishes a single verified set in `data/github-current/`. Restore preflights staged
+  components, shows exact differences and preserves safety backups before writes;
+  it installs packages and runs Stow only with explicit confirmation, without
+  force-syncing user repositories.
+- Neovim preparation and offline restore create isolated candidates. Activation
+  and rollback are separate exact operations; previous and failed generations
+  remain available.
+- SSH key transfer overwrites fixed WSL and Windows destinations.
+- Subtitle burn-in uses FFmpeg overwrite mode for its derived output.
+
+## Layout
+
+```text
+.
+├── AGENTS.md
+├── README.md
+├── backup/
+│   └── archlinux/              # Arch package/config backup and restore
+├── build_containers/
+│   ├── pic/                    # PIC environment/program builders and tests
+│   └── post_process/           # Jupyter post-processing image builder
+├── clean/                      # Protected junk cleanup
+├── process/                    # ASR, translation, and subtitle burn-in
+├── run/                        # PIC, cluster Jupyter, and local app runtimes
+├── sync/                       # NAS and cluster transfer workflows
+├── transfer/                   # Cluster SSH-key deployment
+└── update/                     # Arch, iWAN, and Git update workflows
+```
+
+Detailed guides:
+
+- [Arch backup and restore](backup/README.md)
+- [Container builds](build_containers/README.md)
+- [ASR and media processing](process/README.md)
+- [PIC, Jupyter, and local app runs](run/README.md)
+- [NAS and cluster sync](sync/README.md)
+- [Arch, iWAN, and Git updates](update/README.md)
+
+Arch backup also snapshots the official Rayfile fast-transfer client under
+`~/.local/share/rayfile-runtime`, with its entry point at `~/.local/bin/rayfile-c`.
+See [Rayfile installation and recovery](backup/README.md#rayfile) for the
+locked program snapshot, device-local logs and transfer-validation limits.
+
+## Nushell Commands
+
+The corresponding aliases live in
+`/home/yuhanjin/dot_files/nushell/.config/nushell/config.nu`.
+
+| Alias | Workflow |
+| --- | --- |
+| `sync_files` | NAS synchronization |
+| `clst2win` | Cluster download |
+| `win2clst` | Cluster upload |
+| `fclst2win` | Offline plan; HF/TY/WZ fast download with `--run`; HF/TY not live-tested |
+| `fwin2clst` | Cluster fast upload, local preview by default |
+| `clean_files` | Protected junk cleanup |
+| `bd_pic_envs` | PIC environment-image build |
+| `bd_pic_images` | PIC program-image build |
+| `bd_post_process_images` | EPOCH Jupyter image build |
+| `test_pic_images` | PIC image smoke test |
+| `tsf_clst_key` | Cluster SSH-key deployment |
+| `backup_archlinux` | Publish lightweight configuration and pinned source records; require projects to be pushed first; `--preview` available |
+| `restore_archlinux` | Restore the current set with source checks, automatic scoped replacement and failure rollback; `--preview` available |
+| `update_archlinux` | System update followed by editor candidate preparation |
+| `asr_mt` | ASR/translation/subtitle pipeline |
+| `run_epoch_1d`, `run_epoch_2d`, `run_epoch_3d` | EPOCH runners |
+| `run_smilei`, `run_smilei_spin` | Smilei runners |
+| `run_jupyter` | Slurm Jupyter session lifecycle |
+| `run_matlab_browser` | Local MATLAB Figure Browser, opens the browser by default |
+| `update_iwan` | iWAN route update |
+| `update_git` | Publish `main` through configured `origin`; other branches are refused |
+
+`update_git` replaces the old `git_update` alias. The
+`bd_post_process_images` alias is new.
+
+Tool_Project changes use short feature branches and reviewed pull requests.
+The direct-main `update_git` helper is not that workflow; it stages every file
+and requires an explicit publication request. See [Git updates](update/README.md#github-repository-update).
+
+`update_archlinux` supports `--system-only` and `--editor-only`. Its editor
+stage prints a separate activation command and never switches generations
+implicitly. The shared Neovim helper also owns backup import, validation and
+rollback. Managed Markdown renders in normal mode, exposes source in insert
+mode and uses `<leader>tm`; limited Unicode math uses system `latex2text`.
+The 23 parsers preserve the original language coverage and add latex. Jukit uses
+system Python/IPython and four explicit Arch packages; the original Mason tools
+use pinned reconstruction at their original paths. See
+[editor generations and dependencies](update/README.md#arch-linux) and
+[external tools and recovery](backup/README.md#restore).
+
+Fast download accepts `hf`, `ty`, `wz` or their full cluster aliases and optional
+prefix/suffix filters. Registered SSH homes are `/public/home/yuhanjin` for hf
+and `/work/home/yuhanjin` for ty/wz. Fast download converts only the exact
+registered prefix to portal `/`; relative paths use that portal home. Other
+absolute paths retain portal meaning, and `--portal-path` selects that namespace
+explicitly. Ordinary `clst2win` expands registered relative paths to SSH homes;
+other SSH hosts retain their original behavior.
+
+Fast preview stays offline. `--list` and `--attributes` are separately authorized
+read-only probes of the exact source, not filtered download plans. Complete
+SSH inventories and a tiny WZ transfer fixture have passed acceptance. All three
+clusters use Rayfile batches by parent directory, verify every file and source
+metadata stability, then preserve existing files with incoming numbered names.
+HF/TY share this workflow but remain untested against their servers; `--run`
+prints that status and proceeds with the same checks. Upload keeps its existing
+behavior.
+See [source paths](sync/README.md#source-paths) and
+[fast download modes and limits](sync/README.md#fast-cluster-download).
+
+## Quick Reference
+
+Run examples from the repository root.
+
+```bash
+# Local-only help
+bash backup/archlinux/backup.sh --help
+bash backup/archlinux/restore.sh --help
+nu process/asr_mt.nu --help
+bash run/run_pic.sh --help
+bash run/run_jupyter.sh --help
+bash run/run_matlab_browser.sh --help
+
+# Preview modes; external reads may still occur
+bash update/update_archlinux.sh
+bash update/update_iwan_routes.sh
+nu sync/sync_files.nu all
+nu clean/clean_files.nu /path/to/project
+
+# Container configuration previews
+nu build_containers/pic/bd_pic_envs.nu smilei --dry-run
+nu build_containers/pic/bd_pic_images.nu epoch2d --dry-run
+nu build_containers/pic/test_pic_images.nu all --dry-run
+nu build_containers/post_process/bd_post_process_images.nu epoch --dry-run
+```
+
+## Protected Cleanup
+
+```bash
+nu clean/clean_files.nu <target_directory> [--run]
+```
+
+Preview mode lists explicit cache/editor junk and empty directories. It protects
+credentials, backup data, source, PIC inputs, templates, papers,
+configuration, archives, and common research-data formats. Real deletion
+requires both `--run` and the exact typed confirmation `DELETE`.
+
+Never use a research directory, mounted drive, NAS path, cluster path, backup
+location, or user media as disposable cleanup test data.
+
+## Cluster Key Transfer
+
+```bash
+nu transfer/tsf_clst_key.nu
+```
+
+This real-only workflow selects the newest matching downloaded key for each
+configured cluster and force-copies it to fixed WSL and Windows SSH targets.
+Review the source prefixes, destination names, and target directories before
+running it. Do not execute it as validation or expose key material in logs.
+
+## EPOCH Source and Image Scope
+
+The EPOCH builders and runners in this repository target only the Generic
+source at `/home/yuhanjin/Source_Code/Epoch/Epoch/epoch` and the Generic images
+`epoch_epoch1d.sif`, `epoch_epoch2d.sif`, and `epoch_epoch3d.sif`. Existing
+Photon Probe or QED sources and SIF images are outside this reorganization and
+remain untouched.
+
+The open provenance proposal at
+`/home/yuhanjin/Research_Workflow/policy/open-proposals/epoch-sif-provenance.json`
+also remains byte-unchanged because the current CLI cannot revise an open
+proposal. A future supported revise or supersede workflow must reconcile that
+proposal with the Generic-only mapping and the new builder paths.
+
+## Validation
+
+Use the narrowest syntax or static check for an edited file:
+
+```bash
+nu --ide-check 100 path/to/script.nu
+bash -n path/to/script.sh
+
+python3 -B -c 'import pathlib; p=pathlib.Path("path/to/script.py"); compile(p.read_text(encoding="utf-8"), str(p), "exec")'
+
+ps1_path=$(wslpath -w path/to/script.ps1)
+powershell.exe -NoProfile -Command \
+  "\$p='$ps1_path'; \$tokens=\$null; \$errors=\$null; [void][System.Management.Automation.Language.Parser]::ParseFile(\$p,[ref]\$tokens,[ref]\$errors); if(\$errors.Count){\$errors; exit 1}"
+```
+
+The Python check compiles in memory and does not create `__pycache__`. A
+PowerShell parse uses the Windows executable but must not execute the updater.
+Inspect help or a preview only after confirming that the path does not trigger
+external reads outside the authorized scope.
+
+## Coding-Agent Guidance
+
+Repository-wide instructions live in [AGENTS.md](AGENTS.md). Operational
+subtrees with distinct risk or behavior contracts carry a local `AGENTS.md`
+that inherits the root rules. Research Workflow V0 events replace obsolete
+Cards and Worklogs; read-only inspection and planning do not create an event.

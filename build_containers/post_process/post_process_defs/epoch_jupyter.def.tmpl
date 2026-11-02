@@ -1,0 +1,35 @@
+Bootstrap: docker
+From: {{DOCKER_IMAGE}}
+
+%post
+
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends {{APT_PACKAGES}}
+    rm -rf /var/lib/apt/lists/*
+
+    python -m pip install --no-cache-dir --index-url {{PIP_INDEX}} {{PIP_PACKAGES}}
+    python -m pip check
+
+%environment
+
+    export LC_ALL=C
+    export PYTHONDONTWRITEBYTECODE=1
+    export PYTHONNOUSERSITE=1
+    export PYTHONUNBUFFERED=1
+
+%labels
+
+    Author yuhanjin
+    Description EPOCH Jupyter post-processing image
+
+%runscript
+
+    exec jupyter lab "$@"
+
+%test
+
+    set -e
+    python -m pip check
+    python -c 'import numpy, scipy, matplotlib, h5py, pandas, ipykernel, sdfr'
+    test "$(jupyter lab --version)" = "4.6.2"
