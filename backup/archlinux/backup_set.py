@@ -499,7 +499,7 @@ def temp_identity(path):
 
 
 def create_temp(prefix):
-    if not re.fullmatch(r'arch-(?:backup|restore-(?:runner|payload|user|yay))\.', prefix):
+    if not re.fullmatch(r'arch-(?:backup|restore-(?:runner|payload|user|yay|pacman))\.', prefix):
         fail('Unsupported temporary-directory prefix.')
     path = Path(tempfile.mkdtemp(prefix=prefix, dir='/tmp'))
     identity = temp_identity(path)

@@ -54,6 +54,8 @@ parallel instruction files. Usage belongs in `backup/README.md`.
   Never copy staging 0700 modes onto unrelated parents or write through links.
 - Keep network/build output under invocation staging. Package upgrades, new
   accounts and generated system databases are not file-rollback guarantees.
+- Keep the disposable Pacman/yay package cache outside private staging. Its
+  root must be owned by root and traversable by Pacman's configured DownloadUser.
 
 ## Temporary files and rollback
 
@@ -100,6 +102,8 @@ parallel instruction files. Usage belongs in `backup/README.md`.
   credential deployment or Git publication merely to validate a change.
 - Report actual checks and skipped external operations. Never label a staged
   source build as full editor/framework acceptance.
+- Use the format-2 recipe for tool selection and reporting. A tool with a
+  pinned source stays pending until its rebuild starts.
 
 <!-- research-workflow:policy:start -->
 <!-- digest: 89d09a6994f49df8c13b524a2af6ad0acf361194fc848c001cb517be1ee3a44f -->

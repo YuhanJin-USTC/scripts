@@ -108,6 +108,7 @@ GPG_ROOT_ID=""
 GPG_HOME_ID=""
 GPG_HOME=""
 USER_STAGE=""
+PACMAN_CACHE=""
 YAY_BUILD_DIR=""
 YAY_BUILD_ID=""
 RESTORE_BACKUP_DIR=""
@@ -131,7 +132,7 @@ set_result() {
 }
 make_temp() {
   local variable=$1 prefix=$2 path identity
-  case "$variable" in WORK_DIR|USER_STAGE) ;; *) return 1 ;; esac
+  case "$variable" in WORK_DIR|USER_STAGE|PACMAN_CACHE) ;; *) return 1 ;; esac
   IFS=$'\t' read -r path identity < <(python3 -B "$HELPER" temp-create "$prefix")
   CLEANUP_PATHS+=("$path"); CLEANUP_IDS+=("$identity")
   printf -v "$variable" '%s' "$path"
@@ -209,6 +210,7 @@ done
 make_temp WORK_DIR arch-restore-payload.
 NVIM_READY=false
 RECIPE=""
+PINNED_TOOLS=()
 RAYFILE_READY=false
 RECOVERY_ID=legacy
 
@@ -227,6 +229,9 @@ with Path(sys.argv[2]).open('w') as out:
    out.write(name+'\t'+row['file']+'\n')
 with Path(sys.argv[3]).open('w') as out:
  for name,row in value['components'].items():
+  if value['format']==2 and name in ('dot_files','research_workflow','nvim','topiary','rayfile'):
+   out.write(name+'\tunverified\tAwaiting pinned source records.\n')
+   continue
   reason='Payload selected; not yet staged.' if row['state']=='present' else row['reason']
   reason=''.join(c if ord(c)>=32 else ' ' for c in reason)
   out.write(name+'\t'+('unverified' if row['state']=='present' else 'skipped')+'\t'+reason+'\n')
@@ -334,6 +339,31 @@ else
   fi
 fi
 
+if [ "$SET_FORMAT" = 2 ]; then
+  CURRENT_COMPONENT=rebuild
+  RECIPE="$WORK_DIR/rebuild/downloads.json"
+  [ -f "$RECIPE" ] || { status ERROR 'Missing pinned download records.'; exit 1; }
+  selected=$(python3 -B - "$RECIPE" <<'PY_SELECTED'
+import json, sys
+with open(sys.argv[1], encoding='utf-8') as stream:
+    recipe = json.load(stream)
+if not isinstance(recipe, dict) or recipe.get('format') != 1:
+    raise SystemExit('[ERROR] Unsupported download recipe.')
+selected = []
+for name in ('nvim', 'topiary', 'rayfile'):
+    if name != 'nvim' and name in recipe and recipe[name] is None:
+        continue
+    if not isinstance(recipe.get(name), dict) or not recipe[name]:
+        raise SystemExit('[ERROR] Invalid pinned source record: ' + name)
+    selected.append(name)
+print(' '.join(selected))
+PY_SELECTED
+)
+  read -r -a PINNED_TOOLS <<<"$selected"
+  for name in topiary rayfile; do set_result "$name" skipped 'No source recorded on the backup device.'; done
+  for name in "${PINNED_TOOLS[@]}"; do set_result "$name" pending 'Selected for reconstruction after the package stage.'; done
+fi
+
 # Check project publication before any destination change.
 CURRENT_COMPONENT=preflight
 make_temp USER_STAGE arch-restore-user.
@@ -365,8 +395,6 @@ for name in scripts dot_files research_workflow; do
 done
 CURRENT_COMPONENT=preflight
 if [ "$SET_FORMAT" = 2 ]; then
-  RECIPE="$WORK_DIR/rebuild/downloads.json"
-  [ -f "$RECIPE" ] || { status ERROR 'Missing pinned download records.'; exit 1; }
   cp -- "$RECIPE" "$USER_STAGE/downloads.json"
   if id "$TARGET_USER" >/dev/null 2>&1; then chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/downloads.json"; fi
   for name in dot_files research_workflow; do
@@ -375,6 +403,7 @@ if [ "$SET_FORMAT" = 2 ]; then
     set_result "$name" unverified 'Preparing the pinned project in private staging.'
     "${SOURCE_RUNNER[@]}" "$USER_STAGE/rebuild_tools.py" projects --home "$TARGET_HOME" --work "$USER_STAGE/source-check" --recipe "$USER_STAGE/downloads.json" --target "$USER_STAGE" --project "$name"
     cp -a -- "$USER_STAGE/$name" "$WORK_DIR/$name"
+    set_result "$name" unverified 'Pinned project staged; deployment pending.'
   done
   if [ -d "$WORK_DIR/research_workflow" ]; then
     CURRENT_COMPONENT=research_workflow
@@ -633,7 +662,7 @@ pacman_with_official_mirror() {
     return 1
   fi
 
-  pacman --cachedir "$USER_STAGE/packages-cache" --config <(
+  pacman --cachedir "$PACMAN_CACHE" --config <(
     awk -v server="$PACMAN_FALLBACK_MIRROR" '
       /^[[:space:]]*Include[[:space:]]*=[[:space:]]*\/etc\/pacman\.d\/mirrorlist[[:space:]]*$/ {
         print server
@@ -645,7 +674,7 @@ pacman_with_official_mirror() {
 }
 
 update_keyring_with_retry() {
-  if pacman --cachedir "$USER_STAGE/packages-cache" -Sy --needed --noconfirm archlinux-keyring; then
+  if pacman --cachedir "$PACMAN_CACHE" -Sy --needed --noconfirm archlinux-keyring; then
     return
   fi
 
@@ -654,7 +683,7 @@ update_keyring_with_retry() {
 }
 
 pacman_upgrade_and_install() {
-  if pacman --cachedir "$USER_STAGE/packages-cache" -Syu --needed --noconfirm "$@"; then
+  if pacman --cachedir "$PACMAN_CACHE" -Syu --needed --noconfirm "$@"; then
     return
   fi
 
@@ -662,10 +691,11 @@ pacman_upgrade_and_install() {
   pacman_with_official_mirror -Syyu --needed --noconfirm "$@"
 }
 
-mkdir -p "$USER_STAGE/packages-cache"
-chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/packages-cache"
 CURRENT_COMPONENT=packages
 step 3/8 'Install recorded official and AUR packages.'
+make_temp PACMAN_CACHE arch-restore-pacman.
+# Pacman's DownloadUser must traverse the cache to reach its download-* directory.
+chmod 0755 -- "$PACMAN_CACHE"
 field 'Topiary dependency packages' "${TOPIARY_PACKAGES[*]:-none}"
 field 'Formatter/linter packages' "${FORMATTER_PACKAGES[*]:-none recorded}"
 if [ ! -d /etc/pacman.d/gnupg ]; then pacman-key --init; pacman-key --populate archlinux; fi
@@ -684,7 +714,7 @@ if [ "${#AUR_PACKAGES[@]}" -gt 0 ]; then
       exit 1
     fi
   fi
-  sudo -H -u "$TARGET_USER" env http_proxy="$PROXY_URL" https_proxy="$PROXY_URL" all_proxy="$SOCKS_URL" XDG_CACHE_HOME="$USER_STAGE/cache" yay -S --builddir "$USER_STAGE/aur" --cachedir "$USER_STAGE/packages-cache" --needed --noconfirm -- "${AUR_PACKAGES[@]}"
+  sudo -H -u "$TARGET_USER" env http_proxy="$PROXY_URL" https_proxy="$PROXY_URL" all_proxy="$SOCKS_URL" XDG_CACHE_HOME="$USER_STAGE/cache" yay -S --builddir "$USER_STAGE/aur" --cachedir "$PACMAN_CACHE" --needed --noconfirm -- "${AUR_PACKAGES[@]}"
 fi
 
 pacman -Q "${CORE_ARCH_PACKAGES[@]}" >"$WORK_DIR/core-installed.txt"
@@ -699,17 +729,15 @@ if [ "$SET_FORMAT" = 2 ]; then
   }
   mkdir -p "$USER_STAGE/tmp"
   chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/tmp"
-  CURRENT_COMPONENT=nvim
-  run_rebuild editor --config "$USER_STAGE/dot_files/nvim/.config/nvim" --target "$USER_STAGE/nvim"
-  NVIM_READY=true
-  if python3 -B -c 'import json,sys;raise SystemExit(0 if json.load(open(sys.argv[1]))["topiary"] else 1)' "$RECIPE"; then
-    CURRENT_COMPONENT=topiary
-    run_rebuild topiary --config "$USER_STAGE/dot_files/topiary/.config/topiary" --target "$USER_STAGE/topiary"
-  fi
-  if python3 -B -c 'import json,sys;raise SystemExit(0 if json.load(open(sys.argv[1]))["rayfile"] else 1)' "$RECIPE"; then
-    CURRENT_COMPONENT=rayfile
-    run_rebuild rayfile --target "$USER_STAGE/rayfile"
-  fi
+  for name in "${PINNED_TOOLS[@]}"; do
+    CURRENT_COMPONENT="$name"
+    case "$name" in
+      nvim) run_rebuild editor --config "$USER_STAGE/dot_files/nvim/.config/nvim" --target "$USER_STAGE/nvim"; NVIM_READY=true ;;
+      topiary) run_rebuild topiary --config "$USER_STAGE/dot_files/topiary/.config/topiary" --target "$USER_STAGE/topiary" ;;
+      rayfile) run_rebuild rayfile --target "$USER_STAGE/rayfile" ;;
+    esac
+    set_result "$name" unverified 'Pinned tool staged; installation and verification pending.'
+  done
 fi
 for pair in dot_files:dot_files research_workflow:Research_Workflow; do
   name=${pair%:*}; subdir=${pair#*:}

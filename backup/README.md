@@ -96,7 +96,9 @@ no per-file replacement questions. GPG/sudo authentication remains necessary.
 3. Restore selected system settings and install Arch/AUR dependencies. Arch
    packages follow current repositories; this is not a historical OS image.
 4. Rebuild editor and Topiary candidates and download Rayfile in staging before
-   deploying home configuration. Missing pins/downloads stop recovery.
+   deploying home configuration. The results table shows selected tools as
+   `pending` until this stage runs. Optional tools with a null source record
+   show `skipped`. Missing pins/downloads stop recovery.
 5. Deploy project/configuration changes and Stow links. Existing ignored local
    files and device settings remain in existing checkouts. Effective encrypted
    Git/rclone content must agree with its published Stow source; disagreement
@@ -127,8 +129,11 @@ restore removes the journal and staging. Ordinary errors and catchable signals
 restore replaced configuration, links and managed tool paths, then remove the
 invocation's downloads, plaintext, build output and temporary originals.
 Errors stay on the terminal; no home-level `*_restore_backup_*` directories or
-per-run `arch-recovery` records are created. Package downloads/AUR build caches
-are directed into staging where the package tools support this.
+per-run `arch-recovery` records are created. Pacman and yay use a separate,
+root-owned package cache under `/tmp/arch-restore-pacman.*`. Its mode is 0755
+so Pacman's download user can reach its own `download-*` subdirectory. AUR
+builds and decrypted configuration use private staging. The exit handler
+removes the package cache on success or failure.
 
 Package upgrades, account creation and generated system databases are not
 rolled back as file transactions. A rollback failure preserves the originals
