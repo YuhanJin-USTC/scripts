@@ -3,73 +3,61 @@
   "components": {
     "credentials": {
       "file": "credentials.tar.gz.gpg",
-      "sha256": "edc5a19db4c1792326ab42a11049be1168093a23e8f5ec3d532094cdae625c1d",
-      "size": 8897,
+      "sha256": "26981335625bdc4ea8bb5b2eff0e7aa5ed8f30617b650b4b96daee26a317288e",
+      "size": 7811,
       "state": "present"
     },
     "dot_files": {
-      "file": "dot_files.tar.gz.gpg",
-      "sha256": "5dab350b39273f7918600867fc6812267d3118c3028af92ad5524aa613f5e7a6",
-      "size": 46724,
-      "state": "present"
+      "reason": "No snapshot; downloads.json records selected published sources or source absence.",
+      "state": "absent"
     },
     "home": {
       "file": "home.tar.gz",
-      "sha256": "a1c0666146fc722d7c953367293f1998c34e9530538fd9e40470eef14590d0e3",
-      "size": 4140,
+      "sha256": "6874a48cbd434e351164551e022e24211b546060b6d202fe55d770fdba924e90",
+      "size": 4142,
       "state": "present"
     },
     "nvim": {
-      "file": "nvim.tar.gz",
-      "sha256": "a6e57243ef85927dcecf82ec3d8a060308d51617d6d124566a21b5173809d73f",
-      "size": 66471156,
-      "state": "present"
+      "reason": "No snapshot; downloads.json records selected published sources or source absence.",
+      "state": "absent"
     },
     "packages": {
       "file": "packages.tar.gz",
-      "sha256": "719c77efac929c1a6fb2d8c58fd6af427c5756a87c0ecc1747a93dc2ddd43fd4",
-      "size": 4804,
+      "sha256": "007a81bf76c9d9f7ce4e7ff8fee06077cb34ee410ec8abca7838a6a171d77fb8",
+      "size": 4803,
       "state": "present"
     },
     "rayfile": {
-      "file": "rayfile.tar.gz",
-      "sha256": "3033d9f598a1d25440d5f02aa64746f8cd8e74f5428598a9cc868a0c7efc7821",
-      "size": 30709950,
-      "state": "present"
+      "reason": "No snapshot; downloads.json records selected published sources or source absence.",
+      "state": "absent"
     },
     "rebuild": {
       "file": "rebuild.tar.gz",
-      "sha256": "5a90af1ca8d90f7ee114beaee95e491aaf9e733703bf997c50e0723cb8df85c9",
-      "size": 4529,
+      "sha256": "df9ab10d823f49e900947ecbc13ec1cf8f029e8e875abf480b0991333b46176f",
+      "size": 9149,
       "state": "present"
     },
     "research_workflow": {
-      "file": "research_workflow.tar.gz",
-      "sha256": "446ec923da008d1ce106540696a4359596cd4eae9d1858ebff0ffe2ac7ed2a5a",
-      "size": 554881,
-      "state": "present"
+      "reason": "No snapshot; downloads.json records selected published sources or source absence.",
+      "state": "absent"
     },
     "scripts": {
-      "file": "scripts.tar.gz",
-      "sha256": "26fa70bd3de6d1af77d74c5e4142c6489654f5f12345f58788ed4c9fc30054ec",
-      "size": 180590,
-      "state": "present"
+      "reason": "No snapshot; downloads.json records selected published sources or source absence.",
+      "state": "absent"
     },
     "system": {
       "file": "system.tar.gz",
-      "sha256": "063e03d46a994c9bd88b7f81192c93de8a20564fee1b6800b1079814335e216e",
+      "sha256": "63a1a86e025ab06fece7dbe0362aa74fd8daf046a8d6b2466b82f570c5b76ccb",
       "size": 4877,
       "state": "present"
     },
     "topiary": {
-      "file": "topiary.tar.gz",
-      "sha256": "cc30c1eb9549fea048c561cd15517b03a540ee0379c23f34bd0243a1581f7247",
-      "size": 8704411,
-      "state": "present"
+      "reason": "No snapshot; downloads.json records selected published sources or source absence.",
+      "state": "absent"
     }
   },
-  "created_at": "2026-10-31T15:21:19.582924+00:00",
-  "format": 1,
-  "id": "20261031T152119Z-cda682ff5834",
+  "created_at": "2026-11-02T05:05:58.420513+00:00",
+  "format": 2,
+  "id": "20261102T050558Z-5f0006574c21",
   "state": "COMPLETE"
 }
