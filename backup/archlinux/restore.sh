@@ -335,6 +335,7 @@ else
 fi
 
 # Check project publication before any destination change.
+CURRENT_COMPONENT=preflight
 make_temp USER_STAGE arch-restore-user.
 cp -- "$SCRIPT_DIR/"*.py "$SCRIPT_DIR/nvim_plugins.lua" "$USER_STAGE/"
 SOURCE_RUNNER=(python3 -B)
@@ -358,20 +359,29 @@ print(shlex.join(args))
 PY_SSH_COMMAND
 )
 fi
-"${SOURCE_RUNNER[@]}" "$USER_STAGE/rebuild_tools.py" check-targets --home "$TARGET_HOME" --work "$USER_STAGE/source-check"
+for name in scripts dot_files research_workflow; do
+  CURRENT_COMPONENT="$name"
+  "${SOURCE_RUNNER[@]}" "$USER_STAGE/rebuild_tools.py" check-targets --home "$TARGET_HOME" --work "$USER_STAGE/source-check" --project "$name"
+done
+CURRENT_COMPONENT=preflight
 if [ "$SET_FORMAT" = 2 ]; then
   RECIPE="$WORK_DIR/rebuild/downloads.json"
   [ -f "$RECIPE" ] || { status ERROR 'Missing pinned download records.'; exit 1; }
   cp -- "$RECIPE" "$USER_STAGE/downloads.json"
   if id "$TARGET_USER" >/dev/null 2>&1; then chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/downloads.json"; fi
-  "${SOURCE_RUNNER[@]}" "$USER_STAGE/rebuild_tools.py" projects --home "$TARGET_HOME" --work "$USER_STAGE/source-check" --recipe "$USER_STAGE/downloads.json" --target "$USER_STAGE" "${WORKFLOW_ARGS[@]}"
   for name in dot_files research_workflow; do
-    if [ -d "$USER_STAGE/$name" ]; then cp -a -- "$USER_STAGE/$name" "$WORK_DIR/$name"; fi
+    if [ "$name" = research_workflow ] && [ "${#WORKFLOW_ARGS[@]}" -gt 0 ]; then continue; fi
+    CURRENT_COMPONENT="$name"
+    set_result "$name" unverified 'Preparing the pinned project in private staging.'
+    "${SOURCE_RUNNER[@]}" "$USER_STAGE/rebuild_tools.py" projects --home "$TARGET_HOME" --work "$USER_STAGE/source-check" --recipe "$USER_STAGE/downloads.json" --target "$USER_STAGE" --project "$name"
+    cp -a -- "$USER_STAGE/$name" "$WORK_DIR/$name"
   done
   if [ -d "$WORK_DIR/research_workflow" ]; then
+    CURRENT_COMPONENT=research_workflow
     python3 -B "$WORK_DIR/research_workflow/tools/researchctl.py" --workspace "$WORK_DIR/no-device.toml" doctor --compatibility-only --store "$WORK_DIR/research_workflow/metadata/STORE.json" --json
   fi
 fi
+CURRENT_COMPONENT=preflight
 if [ "$STAGED_SSH" = true ]; then unset GIT_SSH_COMMAND; fi
 set_result scripts skipped 'The executing scripts checkout is retained; no self-snapshot deployment.'
 
@@ -706,12 +716,25 @@ for pair in dot_files:dot_files research_workflow:Research_Workflow; do
   [ -d "$WORK_DIR/$name" ] || continue
   CURRENT_COMPONENT="$name"
   if [ "$SET_FORMAT" = 2 ]; then
-    transaction save "$TARGET_HOME/$subdir"
     if [ -d "$TARGET_HOME/$subdir/.git" ]; then
       revision=$(python3 -B -c 'import json,sys;print(json.load(open(sys.argv[1]))["projects"][sys.argv[2]]["commit"])' "$RECIPE" "$name")
-      sudo -H -u "$TARGET_USER" git -C "$TARGET_HOME/$subdir" -c core.hooksPath=/dev/null fetch --quiet --no-tags "$USER_STAGE/$name" "$revision"
-      sudo -H -u "$TARGET_USER" git -C "$TARGET_HOME/$subdir" -c core.hooksPath=/dev/null merge --ff-only --no-edit FETCH_HEAD
+      project_git=(sudo -H -u "$TARGET_USER" git --no-optional-locks -C "$TARGET_HOME/$subdir" -c core.hooksPath=/dev/null -c core.fsmonitor=false)
+      for field in 'branch --show-current' 'remote get-url origin'; do
+        read -r -a query <<<"$field"
+        actual=$("${project_git[@]}" "${query[@]}")
+        expected=$("${project_git[@]}" -C "$USER_STAGE/$name" "${query[@]}")
+        [ "$actual" = "$expected" ] || { status ERROR "Project branch or origin changed during restore: $subdir"; exit 1; }
+      done
+      changes=$("${project_git[@]}" status --porcelain --untracked-files=all)
+      [ -z "$changes" ] || { status ERROR "Project changed during restore: $subdir"; exit 1; }
+      head=$("${project_git[@]}" rev-parse HEAD)
+      if [ "$head" != "$revision" ]; then
+        transaction save "$TARGET_HOME/$subdir"
+        "${project_git[@]}" fetch --quiet --no-tags "$USER_STAGE/$name" "$revision"
+        "${project_git[@]}" merge --ff-only --no-edit FETCH_HEAD
+      fi
     else
+      transaction save "$TARGET_HOME/$subdir"
       cp -a -- "$WORK_DIR/$name" "$TARGET_HOME/$subdir"
       chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/$subdir"
     fi

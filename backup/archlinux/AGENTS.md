@@ -40,6 +40,9 @@ parallel instruction files. Usage belongs in `backup/README.md`.
   existing projects for unpublished work. Stop the entire restore on conflict.
   Never restore a scripts worktree snapshot over the executing checkout.
 - Existing projects must fast-forward without losing local ignored state.
+  Stage matching complete checkouts locally after publication checks. Fetch
+  file contents before checkout for other pins and attribute failures to the
+  active project.
   Preserve device identity/path settings. Never replace populated divergent
   Research_Workflow authority, auto-merge journals, or copy desktop identity to
   another device. New-device registration/full acceptance remains separate and

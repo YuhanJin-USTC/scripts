@@ -87,9 +87,12 @@ no per-file replacement questions. GPG/sudo authentication remains necessary.
 
 1. Validate/decrypt the selected set in private staging. Check existing projects
    for unpublished work before the first configuration replacement.
-2. Download the recorded project commits. Existing projects must have matching
-   origins/branches and permit a fast-forward; newer/divergent targets require
-   reconciliation or a new backup. No automatic merge or reset is used.
+2. Stage the recorded project commits. After verifying publication, restore
+   reads a complete matching checkout locally. Otherwise it fetches the pinned
+   objects with their file contents from GitHub before checkout. Existing
+   projects must match the origin and branch and allow a fast-forward. A
+   matching HEAD needs no deployment Git transaction. Errors identify the
+   project, the commit and the Git operation.
 3. Restore selected system settings and install Arch/AUR dependencies. Arch
    packages follow current repositories; this is not a historical OS image.
 4. Rebuild editor and Topiary candidates and download Rayfile in staging before

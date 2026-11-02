@@ -22,7 +22,13 @@ NU_REVISION = '18b7f951e0c511f854685dfcc9f6a34981101dd6'
 
 
 def run(args, **kwargs):
-    result = sets.run_process([str(x) for x in args], timeout=kwargs.pop('timeout', 300), **kwargs)
+    try:
+        result = sets.run_process([str(x) for x in args], timeout=kwargs.pop('timeout', 300), **kwargs)
+    except subprocess.TimeoutExpired as error:
+        detail = error.stderr or ''
+        if isinstance(detail, bytes):
+            detail = detail.decode(errors='replace')
+        raise RuntimeError(f'{args[0]} timed out after {error.timeout}s. {detail.strip()[-1500:]}'.rstrip()) from None
     if result.returncode:
         raise RuntimeError(f'{args[0]} failed: {(result.stderr + result.stdout).strip()[-2500:]}')
     return result.stdout.strip()
@@ -76,16 +82,32 @@ def download(source, target, expected):
         raise RuntimeError(f'Download changed: {source}; expected SHA256 {expected}.')
 
 
-def clone(record, target):
+def clone(record, target, source=None):
     remote = url(record['url'])
-    if not re.fullmatch(r'[0-9a-f]{40}', record['commit']):
+    commit = record['commit']
+    if not re.fullmatch(r'[0-9a-f]{40}', commit):
         raise ValueError('Invalid repository commit.')
-    run(['git', '-c', 'core.hooksPath=/dev/null', 'clone', '--quiet', '--filter=blob:none', '--no-checkout', '--', remote, target],
-        env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
-    git(target, 'checkout', '--quiet', '--detach', record['commit'])
-    if record.get('branch'):
-        git(target, 'checkout', '--quiet', '-B', record['branch'], record['commit'])
-        git(target, 'branch', '--set-upstream-to=origin/' + record['branch'])
+    target.mkdir()
+    git(target, 'init', '--quiet')
+    git(target, 'remote', 'add', 'origin', remote)
+    branch = record.get('branch')
+    refs = [commit]
+    if branch:
+        git(target, 'check-ref-format', '--branch', branch)
+        refs.append(f'refs/heads/{branch}:refs/remotes/origin/{branch}')
+    # Projects need ancestry for fast-forward checks. Plugins need just the pin.
+    depth = [] if 'branch' in record else ['--depth=1']
+    operation = 'fetch from local checkout' if source else 'fetch from origin'
+    try:
+        git(target, 'fetch', '--no-tags', '--no-recurse-submodules', *depth, '--', source or 'origin', *refs)
+        operation = 'checkout'
+        git(target, 'checkout', '--quiet', *(['-B', branch] if branch else ['--detach']), commit)
+        if git(target, 'rev-parse', 'HEAD') != commit:
+            raise RuntimeError('Checked-out commit differs from the backup.')
+        if branch:
+            git(target, 'branch', '--set-upstream-to=origin/' + branch)
+    except RuntimeError as error:
+        raise RuntimeError(f'{target.name} {operation} {commit[:12]}: {error}') from None
 
 
 def config_digests(root, names):
@@ -157,27 +179,37 @@ def capture(home, scratch):
     return {'format': 1, 'projects': records, 'nvim': editor, 'topiary': topiary, 'rayfile': client}
 
 
-def check_targets(home, scratch):
-    for directory in ('scripts', *PROJECTS.values()):
+def check_targets(home, scratch, selected=None):
+    for name, directory in {'scripts': 'scripts', **PROJECTS}.items():
+        if selected and name != selected:
+            continue
         path = home / directory
         if path.exists() or path.is_symlink():
             published(path, scratch, scripts=directory == 'scripts')
 
 
-def stage_projects(recipe, home, stage, scratch, keep_workflow=False):
+def stage_projects(recipe, home, stage, scratch, keep_workflow=False, selected=None):
     for name, directory in PROJECTS.items():
-        if name == 'research_workflow' and keep_workflow:
+        if (selected and name != selected) or (name == 'research_workflow' and keep_workflow):
             continue
         record = recipe['projects'][name]
         dest = stage / name
-        clone(record, dest)
         local = home / directory
+        source = None
+        old = None
         if local.exists():
             if url(git(local, 'remote', 'get-url', 'origin')) != record['url']:
                 raise RuntimeError(f'Repository origin differs: {local}')
             old = git(local, 'rev-parse', 'HEAD')
             if git(local, 'branch', '--show-current') != record['branch']:
                 raise RuntimeError(f'Project branch differs from the backup: {local}; select the intended branch first.')
+            if old == record['commit'] and git(local, 'rev-parse', '--is-shallow-repository') == 'false':
+                keys = git(local, 'config', '--local', '--name-only', '--list').splitlines()
+                if not any(key == 'extensions.partialclone' or key.endswith(('.promisor', '.partialclonefilter')) for key in keys):
+                    source = local
+        print(f'[SOURCE] {directory} {record["commit"][:12]} ({"local" if source else "origin"})', flush=True)
+        clone(record, dest, source)
+        if old is not None:
             # A newer/divergent target needs a fresh backup, never a history reset.
             git(dest, 'merge-base', '--is-ancestor', old, record['commit'])
             if name == 'research_workflow':
@@ -309,6 +341,7 @@ def main():
     parser.add_argument('--config', type=Path)
     parser.add_argument('--target', type=Path)
     parser.add_argument('--keep-local-workflow', action='store_true')
+    parser.add_argument('--project', choices=('scripts', *PROJECTS))
     args = parser.parse_args()
     def interrupted(signum, frame):
         raise KeyboardInterrupt
@@ -322,9 +355,9 @@ def main():
         if args.command == 'capture':
             print(json.dumps(capture(args.home, args.work), sort_keys=True))
         elif args.command == 'check-targets':
-            check_targets(args.home, args.work)
+            check_targets(args.home, args.work, args.project)
         elif args.command == 'projects':
-            stage_projects(recipe, args.home, args.target, args.work, args.keep_local_workflow)
+            stage_projects(recipe, args.home, args.target, args.work, args.keep_local_workflow, args.project)
         elif args.command == 'editor':
             build_editor(recipe, args.config, args.target, args.home)
         elif args.command == 'topiary':
