@@ -267,8 +267,10 @@ def _distributions(package):
         meta = email.message_from_string((info / "METADATA").read_text(encoding="utf-8"))
         name = re.sub(r"[-_.]+", "-", meta.get("Name", "")).lower()
         version = meta.get("Version", "")
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) or not VERSION.fullmatch(version) or name in result:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) or not VERSION.fullmatch(version):
             raise RuntimeError(f"Invalid Python distribution metadata: {info}")
+        if name in result:
+            raise RuntimeError(f"Duplicate {name} metadata in {package.name}: {result[name]} and {version}.")
         result[name] = version
     return result
 
@@ -660,18 +662,23 @@ def _install(home, work, stage, name, record, spec, check_only=False):
     request = {"root": str(home / ROOT), "plugin": str(stage / "plugins/mason.nvim"),
                "registry": str(work / "registry"), "name": name, "version": record["version"], "spec": spec,
                "check_only": check_only, "pip_args": (["--constraint", str(constraints)] +
-                [f"{key}=={value}" for key, value in sorted(pins.items())]) if pins else []}
+                [f"{key}=={value}" for key, value in sorted(pins.items()) if key != "pip"]) if pins else []}
     _write(request_path, request)
     env = _env(work, home)
     env["VIMRUNTIME"] = str(stage / "runtime/share/nvim/runtime")
-    command = _sandbox(work, home, root=work / "install", stage=stage, network=not check_only)
-    command += [str(stage / "runtime/bin/nvim"), "--headless", "-u", "NONE", "-i", "NONE", "-n", "-l", str(work / "install.lua"), str(request_path)]
-    output = _run(command, env, work / (name + ("-check" if check_only else "") + ".log"))
+    sandbox = _sandbox(work, home, root=work / "install", stage=stage, network=not check_only)
+    command = [str(stage / "runtime/bin/nvim"), "--headless", "-u", "NONE", "-i", "NONE", "-n", "-l", str(work / "install.lua"), str(request_path)]
+    output = _run(sandbox + command, env, work / (name + ("-check" if check_only else "") + ".log"))
     if check_only:
         rows = [json.loads(line[9:]) for line in output.splitlines() if line.startswith('[SOURCE] ')]
         if (len(rows) != 1 or rows[0]['id'] != record['source'] or
                 _object_hash(rows[0]['raw']) != record['raw_source_sha256']):
             raise RuntimeError(f"Pinned registry and receipt source disagree for {name} after Mason version resolution.")
+    elif pins:
+        # Mason uses --ignore-installed. Replace the venv's seeded pip normally.
+        python = home / ROOT / "packages" / name / "venv/bin/python"
+        _run(sandbox + [str(python), "-IB", "-m", "pip", "--require-virtualenv", "install",
+                        "--no-user", "--no-deps", "--no-compile", "--only-binary=:all:", "pip==" + pins["pip"]], env)
 
 
 def _rename(source, target, source_id=None, source_parent=None, target_parent=None):
