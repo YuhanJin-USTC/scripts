@@ -48,8 +48,9 @@ owner.
   destination. Attributes does not establish a complete directory listing.
 - Support hf/ty/wz downloads through the same runtime checks. Only WZ has live
   fixture acceptance; HF/TY remain untested against their servers and display
-  that status without an extra confirmation gate. Run explicitly uses SSH typed
-  inventories before/after transfer; payloads remain on Rayfile. Never infer
+  that status without an extra confirmation gate. Run both typed inventories
+  on one SSH session and fail closed on disconnect. Keep the device and inode
+  checks and bounded source-difference diagnostics. Payloads use Rayfile. Never infer
   reliable types from native list/attributes or widen incomplete selections.
 - Absolute UTF-8 filelists flatten basenames. Batch by parent into separate
   empty stages, reconstruct inner paths, and verify exact files/types/sizes

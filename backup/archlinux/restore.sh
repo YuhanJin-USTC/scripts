@@ -12,7 +12,8 @@ SOCKS_URL="socks5://127.0.0.1:7890"
 PACMAN_FALLBACK_MIRROR='Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch'
 SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 CURRENT_SET="$SCRIPT_DIR/data/github-current"
-HELPER="$SCRIPT_DIR/backup_set.py"
+SRC_DIR="$SCRIPT_DIR/src"
+HELPER="$SRC_DIR/backup_set.py"
 PREVIEW=false
 WORKFLOW_ARGS=()
 TOOL_PROXY_ENV=()
@@ -28,13 +29,13 @@ status() {
   local label=$1 message=$2 color=36
   case "$label" in OK) color=32 ;; WARN|SKIP) color=33 ;; ERROR) color=31 ;; esac
   if [ "$label" = ERROR ]; then
-    if [ "$COLOR" = true ]; then printf '\033[%sm[%s]\033[0m %s\n' "$color" "$label" "$message" >&2
+    if [ "$COLOR" = true ] && [ -t 2 ]; then printf '\033[%sm[%s]\033[0m %s\n' "$color" "$label" "$message" >&2
     else printf '[%s] %s\n' "$label" "$message" >&2; fi
   elif [ "$COLOR" = true ]; then printf '\033[%sm[%s]\033[0m %s\n' "$color" "$label" "$message"
   else printf '[%s] %s\n' "$label" "$message"; fi
 }
+subtask() { printf '  [%s] %s\n' "${2:-RUN}" "$1" >&2; }
 field() { printf '%s: %s\n' "$1" "$2"; }
-step() { status "$1" "$2"; }
 usage() {
   printf '%s\n' "Usage: $0 [--set PATH | --legacy PATH] [--keep-local-workflow] [--use-tool-proxy] [--preview]" "" \
     "Restore an explicitly selected Arch backup; real mode is the default." \
@@ -71,7 +72,7 @@ field Privileges 'new target user: wheel membership and NOPASSWD: ALL'
 field 'Editor core' "${CORE_ARCH_PACKAGES[*]}; system provider/IPython before Neovim validation"
 field 'Base packages' 'base-devel git stow sudo tar openssh gnupg python bubblewrap'
 field Packages 'Pacman system upgrade/install and AUR install; observed old versions are a rebuild record, not a downgrade promise'
-field Repositories 'require published local work; download pinned project commits; never reset scripts'
+field Repositories 'verify published commits over HTTPS for scripts/dot_files and SSH for Research_Workflow'
 field Proxy "AUR HTTP=$PROXY_URL SOCKS=$SOCKS_URL; package fallback=https://geo.mirror.pkgbuild.com"
 if [ "${#TOOL_PROXY_ENV[@]}" -gt 0 ]; then field 'Tool downloads' "HTTP(S) proxy $PROXY_URL"; fi
 field 'AUR bootstrap' 'if yay is missing: https://aur.archlinux.org/yay-bin.git, new private build directory, target-user makepkg; included in this restore command'
@@ -112,6 +113,7 @@ GPG_ROOT_ID=""
 GPG_HOME_ID=""
 GPG_HOME=""
 USER_STAGE=""
+GITHUB_SSH_ID=""
 PACMAN_CACHE=""
 YAY_BUILD_DIR=""
 YAY_BUILD_ID=""
@@ -143,7 +145,7 @@ make_temp() {
 }
 ensure_crypto_home() {
   if [ -z "$GPG_ROOT" ]; then
-    IFS=$'\t' read -r GPG_ROOT GPG_ROOT_ID < <(python3 -IB "$SCRIPT_DIR/backup_crypto.py" start) || return 1
+    IFS=$'\t' read -r GPG_ROOT GPG_ROOT_ID < <(python3 -IB "$SRC_DIR/backup_crypto.py" start) || return 1
     GPG_HOME="$GPG_ROOT/gpg-home"
     GPG_HOME_ID=$(python3 -B "$HELPER" temp-id "$GPG_HOME") || return 1
   fi
@@ -154,17 +156,27 @@ stop_crypto_agent() {
   if [ -n "$GPG_ROOT" ]; then
     local path="$GPG_ROOT"
     GPG_ROOT=""
-    if ! CODEX_TEMP_CLEANUP=1 python3 -IB "$SCRIPT_DIR/backup_crypto.py" close "$path" "$GPG_ROOT_ID"; then
+    if ! CODEX_TEMP_CLEANUP=1 python3 -IB "$SRC_DIR/backup_crypto.py" close "$path" "$GPG_ROOT_ID"; then
       status ERROR "Private crypto directory retained for review: $path"
       return 1
     fi
   fi
 }
+clear_github_ssh() {
+  [ -n "$GITHUB_SSH_ID" ] || return 0
+  CODEX_TEMP_CLEANUP=1 python3 -B "$HELPER" cleanup "$USER_STAGE/github-ssh" "$GITHUB_SSH_ID" || {
+    status ERROR "Could not safely remove temporary GitHub identity: $USER_STAGE/github-ssh"
+    return 1
+  }
+  GITHUB_SSH_ID=""
+}
 cleanup_restore_tmp() {
   local index failed=0
   unset GPG_PASS
+  clear_github_ssh || failed=1
   stop_crypto_agent || failed=1
   for ((index=${#CLEANUP_PATHS[@]}-1; index>=0; index--)); do
+    if [ -n "$GITHUB_SSH_ID" ] && [ "${CLEANUP_PATHS[index]}" = "$USER_STAGE" ]; then continue; fi
     if [ "$ROLLBACK_FAILED" = true ] && { [ "${CLEANUP_PATHS[index]}" = "$WORK_DIR" ] || [ "${CLEANUP_PATHS[index]}" = "$USER_STAGE" ]; }; then
       status ERROR "Rollback originals retained at ${CLEANUP_PATHS[index]}"
       failed=1
@@ -196,6 +208,7 @@ finish_restore() {
       fi
     done
   fi
+  subtask 'Clean invocation staging'
   if cleanup_restore_tmp; then
     set_result cleanup verified 'Owned temporary paths removed; no private GPG runtime remains for this invocation.'
   else
@@ -216,13 +229,12 @@ NVIM_READY=false
 RECIPE=""
 PINNED_TOOLS=()
 RAYFILE_READY=false
-RECOVERY_ID=legacy
 
-step 1/8 'Verify every archive, encrypted internal manifest, architecture and staging space.'
+status 1/8 'Verify every archive, encrypted internal manifest, architecture and staging space.'
 if [ -n "$SET_DIR" ]; then
+  subtask 'Verify the complete backup and component hashes'
   public_preflight --manifest-output "$WORK_DIR/set.json"
   SET_FORMAT=$(python3 -B -c 'import json,sys;print(json.load(open(sys.argv[1]))["format"])' "$WORK_DIR/set.json")
-  RECOVERY_ID=$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$WORK_DIR/set.json")
   python3 -B - "$WORK_DIR/set.json" "$WORK_DIR/components" "$WORK_DIR/component-states" "${WORKFLOW_ARGS[@]}" <<'PY'
 import json,sys
 from pathlib import Path
@@ -258,6 +270,7 @@ for name,row in value['components'].items():
 PY_COPY
   while IFS=$'\t' read -r name filename; do
     CURRENT_COMPONENT="$name"
+    subtask "Verify and stage $name"
     archive="$WORK_DIR/$filename"
     if [[ "$filename" == *.gpg ]]; then
       [ -n "${GPG_PASS:-}" ] || { read -r -s -p 'Backup GPG passphrase: ' GPG_PASS </dev/tty; printf '\n'; }
@@ -269,12 +282,12 @@ PY_COPY
     fi
     case "$name" in
       nvim)
-        python3 -B "$SCRIPT_DIR/nvim_state.py" --home "$TARGET_HOME" stage "$archive" "$WORK_DIR/nvim" --json >"$WORK_DIR/nvim-stage.json"
+        python3 -B "$SRC_DIR/nvim_state.py" --home "$TARGET_HOME" stage "$archive" "$WORK_DIR/nvim" --json >"$WORK_DIR/nvim-stage.json"
         python3 -B -c 'import json,sys; v=json.load(open(sys.argv[1])); assert v["status"]=="ready" and v["format"]==2' "$WORK_DIR/nvim-stage.json"
         NVIM_READY=true ;;
       rayfile)
         mkdir "$WORK_DIR/rayfile"
-        python3 -B "$SCRIPT_DIR/rayfile_state.py" stage "$archive" "$WORK_DIR/rayfile"
+        python3 -B "$SRC_DIR/rayfile_state.py" stage "$archive" "$WORK_DIR/rayfile"
         RAYFILE_READY=true ;;
       *) python3 -B "$HELPER" stage "$archive" "$WORK_DIR/$name" --require-catalog >/dev/null ;;
     esac
@@ -290,6 +303,7 @@ else
   for component in packages system home credentials scripts dot_files research_workflow topiary nvim rayfile rebuild; do
     set_result "$component" skipped 'Not present in the selected legacy layout.'
   done
+  subtask 'Check legacy configuration and package lists'
   for pair in system:sys_config home:home_config; do
     name=${pair%:*}; file=${pair#*:}
     if [ -f "$LEGACY_DIR/data/$file.tar.gz" ]; then
@@ -320,7 +334,7 @@ else
     CURRENT_COMPONENT=nvim
     set_result nvim unverified 'Legacy editor archive selected.'
     stage_exit=0
-    python3 -B "$SCRIPT_DIR/nvim_state.py" --home "$TARGET_HOME" stage "$LEGACY_DIR/data/nvim.tar.gz" "$WORK_DIR/nvim" --json >"$WORK_DIR/nvim-stage.json" 2>"$WORK_DIR/nvim-stage.err" || stage_exit=$?
+    python3 -B "$SRC_DIR/nvim_state.py" --home "$TARGET_HOME" stage "$LEGACY_DIR/data/nvim.tar.gz" "$WORK_DIR/nvim" --json >"$WORK_DIR/nvim-stage.json" 2>"$WORK_DIR/nvim-stage.err" || stage_exit=$?
     if [ "$stage_exit" -eq 0 ]; then
       python3 -B -c 'import json,sys; v=json.load(open(sys.argv[1])); assert v["status"]=="ready" and v["format"]==2' "$WORK_DIR/nvim-stage.json"
       NVIM_READY=true
@@ -338,7 +352,7 @@ else
     CURRENT_COMPONENT=rayfile
     set_result rayfile unverified 'Legacy managed-client archive selected.'
     mkdir "$WORK_DIR/rayfile"
-    python3 -B "$SCRIPT_DIR/rayfile_state.py" stage "$LEGACY_DIR/data/rayfile.tar.gz" "$WORK_DIR/rayfile"
+    python3 -B "$SRC_DIR/rayfile_state.py" stage "$LEGACY_DIR/data/rayfile.tar.gz" "$WORK_DIR/rayfile"
     RAYFILE_READY=true
   fi
 fi
@@ -371,51 +385,95 @@ fi
 # Check project publication before any destination change.
 CURRENT_COMPONENT=preflight
 make_temp USER_STAGE arch-restore-user.
-cp -- "$SCRIPT_DIR/"*.py "$SCRIPT_DIR/nvim_plugins.lua" "$USER_STAGE/"
-SOURCE_RUNNER=(python3 -B)
-STAGED_SSH=false
+cp -- "$SRC_DIR"/{backup_set.py,rebuild_tools.py,nvim_state.py,nvim_plugins.lua,mason_tools.py,rayfile_state.py} "$USER_STAGE/"
+SOURCE_RUNNER=()
+WORKFLOW_SSH=()
+if [ "$SET_FORMAT" = 2 ]; then cp -- "$RECIPE" "$USER_STAGE/downloads.json"; fi
 if id "$TARGET_USER" >/dev/null 2>&1; then
+  SOURCE_RUNNER=(sudo -H -u "$TARGET_USER")
+  if [ -e "$TARGET_HOME/Research_Workflow" ] || { [ "$SET_FORMAT" = 2 ] && [ "${#WORKFLOW_ARGS[@]}" -eq 0 ]; }; then
+    CURRENT_COMPONENT=research_workflow
+    subtask 'Check GitHub SSH access for Research_Workflow'
+    workflow_url=git@github.com:YuhanJin-USTC/Research_Workflow.git
+    probe=(sudo -H -u "$TARGET_USER" env LC_ALL=C GIT_TERMINAL_PROMPT=0)
+    strict_ssh='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes'
+    ssh_command=$strict_ssh
+    configured=$("${probe[@]}" git -C / config --get core.sshCommand) || { [ "$?" -eq 1 ] || exit 1; }
+    case "$configured" in
+      ''|ssh|/usr/bin/ssh|/usr/sbin/ssh) ;;
+      'ssh '*|'/usr/bin/ssh '*|'/usr/sbin/ssh '*) ssh_command+=" ${configured#* }" ;;
+      *) status ERROR 'Research_Workflow preflight requires an OpenSSH command with strict host checking.'; exit 1 ;;
+    esac
+    effective=$("${probe[@]}" git -C / ls-remote --get-url -- "$workflow_url")
+    [ "$effective" = "$workflow_url" ] || { status ERROR 'Git URL rewrite changes the Research_Workflow SSH address.'; exit 1; }
+    if message=$("${probe[@]}" GIT_SSH_COMMAND="$ssh_command" timeout 30 git -C / ls-remote --exit-code -- "$workflow_url" HEAD 2>&1); then
+      WORKFLOW_SSH=("GIT_SSH_COMMAND=$ssh_command")
+    else
+      case "$message" in
+        *'REMOTE HOST IDENTIFICATION HAS CHANGED'*|*'Offending '*|*'REVOKED HOST KEY'*) status ERROR "$message"; exit 1 ;;
+        *'Permission denied (publickey'*|*'Too many authentication failures'*|*'ERROR: Repository not found.'*|*'host key is known for '*|*"Can't open user config file"*"No such file or directory"*)
+          subtask 'Use the saved GitHub identity for Research_Workflow'
+          saved="$WORK_DIR/credentials/.ssh"
+          private="$USER_STAGE/github-ssh"
+          python3 -B "$HELPER" parents "$saved"
+          for file in id_github known_hosts; do
+            [ -s "$saved/$file" ] && [ -f "$saved/$file" ] && [ ! -L "$saved/$file" ] || {
+              status ERROR "Missing or unsafe saved SSH file: $file. Configure GitHub SSH for $TARGET_USER."
+              exit 1
+            }
+          done
+          # Populate before the target user owns the staging parent.
+          mkdir -m 700 -- "$private"
+          GITHUB_SSH_ID=$(python3 -B "$HELPER" temp-id "$private")
+          install -m 600 -- "$saved/id_github" "$saved/known_hosts" "$private/"
+          WORKFLOW_SSH=("GIT_SSH_COMMAND=$strict_ssh -F /dev/null -o IdentityAgent=none -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$private/known_hosts -i $private/id_github")
+          ;;
+        *) status ERROR "Research_Workflow SSH check failed: ${message:-no response}"; exit 1 ;;
+      esac
+    fi
+  fi
   chown -R "$TARGET_USER:$TARGET_USER" "$USER_STAGE"
-  SOURCE_RUNNER=(sudo -H -u "$TARGET_USER" python3 -B)
 else
-  # A new account can authenticate with the privately staged saved SSH keys.
-  STAGED_SSH=true
-  export GIT_SSH_COMMAND
-  GIT_SSH_COMMAND=$(python3 -B - "$WORK_DIR/credentials/.ssh" "$USER_STAGE" <<'PY_SSH_COMMAND'
-import pathlib,shlex,sys
-root=pathlib.Path(sys.argv[1]);work=pathlib.Path(sys.argv[2])
-known=root/'known_hosts'
-args=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile='+str(known)]
-for public in sorted(root.glob('*.pub')):
- key=public.with_suffix('')
- if key.is_file() and not key.is_symlink():args+=['-i',str(key)]
-print(shlex.join(args))
-PY_SSH_COMMAND
-)
+  # A new account uses the key pairs directly from private payload staging.
+  saved="$WORK_DIR/credentials/.ssh"
+  ssh_args=(ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$saved/known_hosts")
+  for public in "$saved/"*.pub; do
+    key=${public%.pub}
+    if [ -f "$public" ] && [ -f "$key" ] && [ ! -L "$key" ]; then ssh_args+=(-i "$key"); fi
+  done
+  printf -v ssh_command '%q ' "${ssh_args[@]}"
+  WORKFLOW_SSH=("GIT_SSH_COMMAND=$ssh_command")
 fi
+source_project() {
+  local command=$1 project=$2
+  shift 2
+  local auth=()
+  if [ "$project" = research_workflow ]; then auth=("${WORKFLOW_SSH[@]}"); fi
+  "${SOURCE_RUNNER[@]}" env "${auth[@]}" python3 -B "$USER_STAGE/rebuild_tools.py" "$command" \
+    --home "$TARGET_HOME" --work "$USER_STAGE/source-check" --project "$project" "$@"
+}
 for name in scripts dot_files research_workflow; do
   CURRENT_COMPONENT="$name"
-  "${SOURCE_RUNNER[@]}" "$USER_STAGE/rebuild_tools.py" check-targets --home "$TARGET_HOME" --work "$USER_STAGE/source-check" --project "$name"
+  subtask "Check published source for $name"
+  source_project check-targets "$name"
 done
 CURRENT_COMPONENT=preflight
 if [ "$SET_FORMAT" = 2 ]; then
-  cp -- "$RECIPE" "$USER_STAGE/downloads.json"
-  if id "$TARGET_USER" >/dev/null 2>&1; then chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/downloads.json"; fi
   for name in dot_files research_workflow; do
     if [ "$name" = research_workflow ] && [ "${#WORKFLOW_ARGS[@]}" -gt 0 ]; then continue; fi
     CURRENT_COMPONENT="$name"
     set_result "$name" unverified 'Preparing the pinned project in private staging.'
-    "${SOURCE_RUNNER[@]}" "$USER_STAGE/rebuild_tools.py" projects --home "$TARGET_HOME" --work "$USER_STAGE/source-check" --recipe "$USER_STAGE/downloads.json" --target "$USER_STAGE" --project "$name"
+    source_project projects "$name" --recipe "$USER_STAGE/downloads.json" --target "$USER_STAGE"
     cp -a -- "$USER_STAGE/$name" "$WORK_DIR/$name"
     set_result "$name" unverified 'Pinned project staged; deployment pending.'
   done
-  if [ -d "$WORK_DIR/research_workflow" ]; then
-    CURRENT_COMPONENT=research_workflow
-    python3 -B "$WORK_DIR/research_workflow/tools/researchctl.py" --workspace "$WORK_DIR/no-device.toml" doctor --compatibility-only --store "$WORK_DIR/research_workflow/metadata/STORE.json" --json
-  fi
+fi
+clear_github_ssh
+if [ "$SET_FORMAT" = 2 ] && [ -d "$WORK_DIR/research_workflow" ]; then
+  CURRENT_COMPONENT=research_workflow
+  python3 -B "$WORK_DIR/research_workflow/tools/researchctl.py" --workspace "$WORK_DIR/no-device.toml" doctor --compatibility-only --store "$WORK_DIR/research_workflow/metadata/STORE.json" --json
 fi
 CURRENT_COMPONENT=preflight
-if [ "$STAGED_SSH" = true ]; then unset GIT_SSH_COMMAND; fi
 set_result scripts skipped 'The executing scripts checkout is retained; no self-snapshot deployment.'
 
 # Validate package input before the first privileged change.
@@ -533,8 +591,8 @@ fi
 if [ "$NVIM_READY" = true ]; then
   CURRENT_COMPONENT=mason_tools
   [ -f "$WORK_DIR/rebuild/editor_tools.json" ] || { status ERROR 'Missing exact editor-tool reconstruction records.'; exit 1; }
-  python3 -B "$SCRIPT_DIR/nvim_state.py" --home "$TARGET_HOME" \
-    mason-restore "$WORK_DIR/rebuild/editor_tools.json" "$WORK_DIR/nvim" "$SCRIPT_DIR/nvim_plugins.lua" --json >"$WORK_DIR/mason-preflight.json"
+  python3 -B "$SRC_DIR/nvim_state.py" --home "$TARGET_HOME" \
+    mason-restore "$WORK_DIR/rebuild/editor_tools.json" "$WORK_DIR/nvim" "$SRC_DIR/nvim_plugins.lua" --json >"$WORK_DIR/mason-preflight.json"
   set_result mason_tools unverified 'Pinned tool records and destination paths passed read-only preflight; reconstruction/functional checks pending.'
 fi
 if [ "$SET_FORMAT" = 1 ] && [ "${#WORKFLOW_ARGS[@]}" -eq 0 ] && [ -d "$WORK_DIR/research_workflow" ]; then
@@ -624,10 +682,12 @@ PY
 }
 
 CURRENT_COMPONENT=system
-step 2/8 'Restore selected system configuration and prepare target user.'
+status 2/8 'Restore selected system configuration and prepare target user.'
+subtask 'Prepare system configuration and target account'
 [ ! -d "$WORK_DIR/system" ] || deploy_tree "$WORK_DIR/system" / root:root
 if ! id "$TARGET_USER" >/dev/null 2>&1; then
   useradd -m -G wheel -s /bin/bash "$TARGET_USER"
+  chown -R "$TARGET_USER:$TARGET_USER" "$USER_STAGE"
   preserve_path /etc/sudoers.d/wheel_nopasswd
   printf '%%wheel ALL=(ALL:ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/wheel_nopasswd
   chmod 440 /etc/sudoers.d/wheel_nopasswd
@@ -696,16 +756,20 @@ pacman_upgrade_and_install() {
 }
 
 CURRENT_COMPONENT=packages
-step 3/8 'Install recorded official and AUR packages.'
+status 3/8 'Install recorded official and AUR packages.'
 make_temp PACMAN_CACHE arch-restore-pacman.
 # Pacman's DownloadUser must traverse the cache to reach its download-* directory.
 chmod 0755 -- "$PACMAN_CACHE"
 field 'Topiary dependency packages' "${TOPIARY_PACKAGES[*]:-none}"
 field 'Formatter/linter packages' "${FORMATTER_PACKAGES[*]:-none recorded}"
+package_steps=1
+if [ "${#AUR_PACKAGES[@]}" -gt 0 ]; then package_steps=2; fi
+subtask 'Install official packages' "1/$package_steps"
 if [ ! -d /etc/pacman.d/gnupg ]; then pacman-key --init; pacman-key --populate archlinux; fi
 update_keyring_with_retry
 pacman_upgrade_and_install base-devel git stow sudo tar openssh gnupg python bubblewrap rust cmake pkgconf "${CORE_ARCH_PACKAGES[@]}" "${PACMAN_PACKAGES[@]}" "${TOPIARY_PACKAGES[@]}" "${FORMATTER_PACKAGES[@]}"
 if [ "${#AUR_PACKAGES[@]}" -gt 0 ]; then
+  subtask 'Install AUR packages' "2/$package_steps"
   if ! command -v yay >/dev/null; then
     IFS=$'\t' read -r YAY_BUILD_DIR YAY_BUILD_ID < <(python3 -B "$HELPER" temp-create arch-restore-yay.)
     CLEANUP_PATHS+=("$YAY_BUILD_DIR"); CLEANUP_IDS+=("$YAY_BUILD_ID")
@@ -719,22 +783,25 @@ if [ "${#AUR_PACKAGES[@]}" -gt 0 ]; then
     fi
   fi
   sudo -H -u "$TARGET_USER" env http_proxy="$PROXY_URL" https_proxy="$PROXY_URL" all_proxy="$SOCKS_URL" XDG_CACHE_HOME="$USER_STAGE/cache" yay -S --builddir "$USER_STAGE/aur" --cachedir "$PACMAN_CACHE" --needed --noconfirm -- "${AUR_PACKAGES[@]}"
+else
+  subtask 'No AUR packages recorded' SKIP
 fi
 
 pacman -Q "${CORE_ARCH_PACKAGES[@]}" >"$WORK_DIR/core-installed.txt"
 set_result packages verified 'Package transactions completed; four selected Arch editor dependencies are installed. Runtime behavior is reported separately.'
 set_result jukit_core unverified 'Core Arch packages installed; provider/cell/output/conversion checks are still pending.'
 
-step 4/8 'Rebuild pinned tools and restore home configuration.'
+status 4/8 'Rebuild pinned tools and restore home configuration.'
 if [ "$SET_FORMAT" = 2 ]; then
   chown -R "$TARGET_USER:$TARGET_USER" "$USER_STAGE"
   run_rebuild() {
-    sudo -H -u "$TARGET_USER" env "${TOOL_PROXY_ENV[@]}" TMPDIR="$USER_STAGE/tmp" python3 -B "$USER_STAGE/rebuild_tools.py" "$@" --home "$TARGET_HOME" --recipe "$USER_STAGE/downloads.json" --work "$USER_STAGE/build"
+    sudo -H -u "$TARGET_USER" env ARCH_RESTORE_PROGRESS=1 "${TOOL_PROXY_ENV[@]}" TMPDIR="$USER_STAGE/tmp" python3 -B "$USER_STAGE/rebuild_tools.py" "$@" --home "$TARGET_HOME" --recipe "$USER_STAGE/downloads.json" --work "$USER_STAGE/build"
   }
   mkdir -p "$USER_STAGE/tmp"
   chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/tmp"
   for name in "${PINNED_TOOLS[@]}"; do
     CURRENT_COMPONENT="$name"
+    subtask "Rebuild pinned tool  $name"
     case "$name" in
       nvim) run_rebuild editor --config "$USER_STAGE/dot_files/nvim/.config/nvim" --target "$USER_STAGE/nvim"; NVIM_READY=true ;;
       topiary) run_rebuild topiary --config "$USER_STAGE/dot_files/topiary/.config/topiary" --target "$USER_STAGE/topiary" ;;
@@ -747,16 +814,13 @@ for pair in dot_files:dot_files research_workflow:Research_Workflow; do
   name=${pair%:*}; subdir=${pair#*:}
   [ -d "$WORK_DIR/$name" ] || continue
   CURRENT_COMPONENT="$name"
+  subtask "Deploy project  $subdir"
   if [ "$SET_FORMAT" = 2 ]; then
     if [ -d "$TARGET_HOME/$subdir/.git" ]; then
       revision=$(python3 -B -c 'import json,sys;print(json.load(open(sys.argv[1]))["projects"][sys.argv[2]]["commit"])' "$RECIPE" "$name")
       project_git=(sudo -H -u "$TARGET_USER" git --no-optional-locks -C "$TARGET_HOME/$subdir" -c core.hooksPath=/dev/null -c core.fsmonitor=false)
-      for field in 'branch --show-current' 'remote get-url origin'; do
-        read -r -a query <<<"$field"
-        actual=$("${project_git[@]}" "${query[@]}")
-        expected=$("${project_git[@]}" -C "$USER_STAGE/$name" "${query[@]}")
-        [ "$actual" = "$expected" ] || { status ERROR "Project branch or origin changed during restore: $subdir"; exit 1; }
-      done
+      sudo -H -u "$TARGET_USER" python3 -B "$USER_STAGE/rebuild_tools.py" check-checkout \
+        --home "$TARGET_HOME" --work "$USER_STAGE/source-check" --project "$name" <"$RECIPE"
       changes=$("${project_git[@]}" status --porcelain --untracked-files=all)
       [ -z "$changes" ] || { status ERROR "Project changed during restore: $subdir"; exit 1; }
       head=$("${project_git[@]}" rev-parse HEAD)
@@ -791,28 +855,32 @@ for pair in dot_files:dot_files research_workflow:Research_Workflow; do
 done
 if [ -d "$WORK_DIR/home" ]; then
   CURRENT_COMPONENT=home
+  subtask 'Deploy home configuration'
   deploy_tree "$WORK_DIR/home" "$TARGET_HOME" "$TARGET_USER:$TARGET_USER"
   set_result home verified 'Selected home file contents and metadata match.'
 fi
 if [ -d "$WORK_DIR/credentials" ]; then
   CURRENT_COMPONENT=credentials
+  subtask 'Deploy selected credentials'
   deploy_tree "$WORK_DIR/credentials" "$TARGET_HOME" "$TARGET_USER:$TARGET_USER" "${CREDENTIAL_EXCLUDES[@]}"
   set_result credentials unverified 'Selected direct credentials match; chosen Stow-managed effective files await final checks.'
 fi
 
 CURRENT_COMPONENT=dot_files
-step 5/8 'Preflight and deploy the restored Stow packages.'
+status 5/8 'Preflight and deploy the restored Stow packages.'
 if [ -d "$WORK_DIR/dot_files" ]; then
+  subtask 'Compare and deploy managed Stow links'
   python3 -B "$HELPER" stow "$TARGET_HOME/dot_files" "$TARGET_HOME" "$RESTORE_BACKUP_DIR" "$TARGET_USER"
   set_result dot_files verified 'Published configuration and managed Stow links deployed.'
 else status SKIP 'No dot_files selected.'; fi
 if [ -d "$WORK_DIR/credentials" ]; then set_result credentials verified 'File contents, modes and selected Stow targets match; SSH login and GPG key use are untested.'; fi
 
 
-step 6/8 'Install staged tools and validate the editor.'
+status 6/8 'Install staged tools and validate the editor.'
 if [ "$SET_FORMAT" = 2 ]; then
   if [ -d "$USER_STAGE/topiary" ]; then
     CURRENT_COMPONENT=topiary
+    subtask 'Install Topiary and the pinned Nu grammar'
     preserve_path /usr/local/bin/topiary
     install -m 755 -- "$USER_STAGE/topiary/bin/topiary" /usr/local/bin/topiary
     grammar="$TARGET_HOME/.cache/topiary/nu/$TOPIARY_NU_REVISION/grammar.so"
@@ -823,6 +891,7 @@ if [ "$SET_FORMAT" = 2 ]; then
   fi
   if [ -d "$USER_STAGE/rayfile" ]; then
     CURRENT_COMPONENT=rayfile
+    subtask 'Install the verified Rayfile client'
     sudo -H -u "$TARGET_USER" env ARCH_RESTORE_TRANSACTION="$USER_STAGE/transaction" python3 -B - "$USER_STAGE" "$TARGET_HOME" <<'PY_RAYFILE_DOWNLOAD'
 import sys
 from pathlib import Path
@@ -847,8 +916,9 @@ topiary_probe() {
 }
 if [ -d "$WORK_DIR/topiary" ]; then
   CURRENT_COMPONENT=topiary
+  subtask 'Check legacy Topiary runtime dependencies'
   topiary_probe "$WORK_DIR/topiary/bin/topiary" dependencies >"$WORK_DIR/topiary-target-dependencies.txt"
-  python3 -IB - "$WORK_DIR/topiary/runtime.json" "$WORK_DIR/topiary-target-dependencies.txt" "$WORK_DIR/topiary-target-runtime.json" "$SCRIPT_DIR" <<'PY_TOPIARY_CHECK'
+  python3 -IB - "$WORK_DIR/topiary/runtime.json" "$WORK_DIR/topiary-target-dependencies.txt" "$WORK_DIR/topiary-target-runtime.json" "$SRC_DIR" <<'PY_TOPIARY_CHECK'
 from pathlib import Path
 import hashlib,json,os,subprocess,sys
 sys.path.insert(0,sys.argv[4])
@@ -890,8 +960,6 @@ PY_TOPIARY_CHECK
   set_result topiary unverified 'Original Topiary binary/version and accepted fixed-revision Nu grammar bytes/mode restored at original paths; no library write or grammar download. Target formatter behavior requires separate functional acceptance.'
 fi
 if [ "$NVIM_READY" = true ] || [ "$RAYFILE_READY" = true ]; then
-  [ -n "$USER_STAGE" ] || make_temp USER_STAGE arch-restore-user.
-  cp -- "$SCRIPT_DIR/nvim_state.py" "$SCRIPT_DIR/nvim_plugins.lua" "$SCRIPT_DIR/rayfile_state.py" "$SCRIPT_DIR/mason_tools.py" "$SCRIPT_DIR/backup_set.py" "$USER_STAGE/"
   [ ! -d "$WORK_DIR/nvim" ] || cp -a -- "$WORK_DIR/nvim" "$USER_STAGE/"
   [ ! -d "$WORK_DIR/rayfile" ] || cp -a -- "$WORK_DIR/rayfile" "$USER_STAGE/"
   if [ -f "$WORK_DIR/rebuild/editor_tools.json" ]; then cp -- "$WORK_DIR/rebuild/editor_tools.json" "$USER_STAGE/editor_tools.json"; fi
@@ -899,6 +967,7 @@ if [ "$NVIM_READY" = true ] || [ "$RAYFILE_READY" = true ]; then
 fi
 if [ "$NVIM_READY" = true ]; then
   CURRENT_COMPONENT=mason_tools
+  subtask 'Check and rebuild pinned Mason tools'
   if [ ! -f "$USER_STAGE/editor_tools.json" ]; then
     status ERROR 'Editor tool reconstruction metadata is missing; exact Mason recovery cannot proceed.'
     exit 1
@@ -919,6 +988,7 @@ PY_MASON_RESULT
   set_result mason_tools verified 'All four selected original-path Mason tools passed pinned-source/content and real executable checks; unchanged tools were skipped.'
 
   CURRENT_COMPONENT=nvim
+  subtask 'Validate the editor and its integrations'
   sudo -H -u "$TARGET_USER" env ARCH_RESTORE_TRANSACTION="$USER_STAGE/transaction" python3 -B "$USER_STAGE/nvim_state.py" --home "$TARGET_HOME" equivalent "$USER_STAGE/nvim" --json >"$WORK_DIR/nvim-equivalent.json"
   equivalent=$(python3 -B -c 'import json,sys;print("true" if json.load(open(sys.argv[1]))["equivalent"] else "false")' "$WORK_DIR/nvim-equivalent.json")
   if [ "$equivalent" = true ]; then
@@ -959,6 +1029,7 @@ else
 fi
 if [ "$RAYFILE_READY" = true ]; then
   CURRENT_COMPONENT=rayfile
+  subtask 'Verify or restore the Rayfile client'
   sudo -H -u "$TARGET_USER" python3 -B "$USER_STAGE/backup_set.py" rayfile-equivalent "$USER_STAGE/rayfile" "$TARGET_HOME" "$USER_STAGE/rayfile_state.py" >"$WORK_DIR/rayfile-equivalent.json"
   if python3 -B -c 'import json,sys;raise SystemExit(0 if json.load(open(sys.argv[1]))["equivalent"] else 1)' "$WORK_DIR/rayfile-equivalent.json"; then
     sudo -H -u "$TARGET_USER" env ARCH_RESTORE_TRANSACTION="$USER_STAGE/transaction" python3 -B "$USER_STAGE/rayfile_state.py" verify --home "$TARGET_HOME"
@@ -971,13 +1042,9 @@ fi
 
 CURRENT_COMPONENT=formatter_linter_tools
 if [ -f "$WORK_DIR/rebuild/editor_tools.json" ] && python3 -B -c 'import json,sys;raise SystemExit(0 if "formatter_linter_tools" in json.load(open(sys.argv[1])) else 1)' "$WORK_DIR/rebuild/editor_tools.json"; then
-  if [ -z "$USER_STAGE" ]; then
-    make_temp USER_STAGE arch-restore-user.
-    chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE"
-  fi
-  cp -- "$SCRIPT_DIR/nvim_state.py" "$SCRIPT_DIR/mason_tools.py" "$USER_STAGE/"
+  subtask 'Check recorded formatters and linters'
   cp -- "$WORK_DIR/rebuild/editor_tools.json" "$USER_STAGE/formatter-tools.json"
-  chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/nvim_state.py" "$USER_STAGE/mason_tools.py" "$USER_STAGE/formatter-tools.json"
+  chown "$TARGET_USER:$TARGET_USER" "$USER_STAGE/formatter-tools.json"
   sudo -H -u "$TARGET_USER" env PATH=/usr/local/bin:/usr/bin:/bin python3 -B "$USER_STAGE/nvim_state.py" --home "$TARGET_HOME" \
     formatter-check "$USER_STAGE/formatter-tools.json" --json >"$WORK_DIR/rebuild/formatter-linter-check.json"
   formatter_state=$(python3 -B - "$WORK_DIR/rebuild/formatter-linter-check.json" <<'PY_FORMATTER_RESULT'
@@ -996,9 +1063,10 @@ else
   set_result formatter_linter_tools uncovered 'No six-tool source/reconstruction records in this backup; no inferred dependency success.'
 fi
 
-step 7/8 'Restore the default shell.'
+status 7/8 'Restore the default shell.'
 if [ -f "$WORK_DIR/packages/default_shell.txt" ]; then
   CURRENT_COMPONENT=packages
+  subtask 'Check the recorded login shell'
   shell_path=$(cat "$WORK_DIR/packages/default_shell.txt")
   if [[ "$shell_path" == /* && "$shell_path" != *$'\n'* ]] && [ -f "$shell_path" ] && [ -x "$shell_path" ]; then
     if ! grep -Fxq "$shell_path" /etc/shells; then
@@ -1021,12 +1089,14 @@ if [ -f "$WORK_DIR/packages/default_shell.txt" ]; then
 elif [ -n "$SET_DIR" ]; then
   status ERROR 'The selected set lacks its default-shell record.'
   exit 1
+else
+  subtask 'No legacy login shell recorded' SKIP
 fi
 if [ -d "$WORK_DIR/rebuild" ]; then
   set_result rebuild verified 'Source/version records consumed from the selected set; no extra recovery directory.'
   set_result private_npm uncovered 'Private npm installation is outside this recovery; recorded names remain in the backup.'
 fi
-step 8/8 'Finish and clean invocation staging.'
+status 8/8 'Finish and clean invocation staging.'
 CURRENT_COMPONENT=""
 if [ -n "$LEGACY_DIR" ]; then
   RESTORE_OUTCOME=legacy

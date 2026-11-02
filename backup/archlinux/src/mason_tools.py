@@ -1,7 +1,6 @@
 """Internal Mason records and reconstruction for nvim_state.py."""
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
 import ctypes
 import email
 import fcntl
@@ -16,7 +15,7 @@ import re
 import signal
 import shutil
 import stat
-import subprocess
+import sys
 import tempfile
 import urllib.parse
 import urllib.request
@@ -838,7 +837,9 @@ def restore_tools(home, records, staged_source, lua_helper=None, execute=False, 
                 _unchanged_targets(before, home)
                 subset = {name: record for name, record in rebuild.items() if _object_hash(record["registry"]) == key}
                 specs.update(_registry_specs(registry, subset))
-            for name, record in rebuild.items():
+            for index, (name, record) in enumerate(rebuild.items(), 1):
+                if os.environ.get("ARCH_RESTORE_TRANSACTION"):
+                    print(f"  [{index}/{len(rebuild)}] Mason package  {name}", file=sys.stderr, flush=True)
                 _unchanged_stage(stage, plan["stage"])
                 _unchanged_targets(before, home)
                 _install(home, work, stage, name, record, specs[name], check_only=True)

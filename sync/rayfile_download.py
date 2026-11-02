@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from contextlib import contextmanager
 import fnmatch
 import hashlib
 import json
@@ -38,7 +39,6 @@ CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 SSH_INVENTORY = r'''
 import json, os, stat, sys
 root = sys.argv[1]
-records = []
 flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 def walk(fd, prefix):
     for name in sorted(os.listdir(fd)):
@@ -58,19 +58,24 @@ def walk(fd, prefix):
                 walk(child, path + "/")
             finally:
                 os.close(child)
-fd = os.open("/", flags)
-try:
-    for part in root.split("/")[1:]:
-        child = os.open(part, flags, dir_fd=fd)
+# One request per scan. EOF cancels any remaining scan.
+for _ in range(2):
+    if sys.stdin.buffer.readline() != b"scan\n":
+        break
+    records = []
+    fd = os.open("/", flags)
+    try:
+        for part in root.split("/")[1:]:
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        walk(fd, "")
+    finally:
         os.close(fd)
-        fd = child
-    walk(fd, "")
-finally:
-    os.close(fd)
-result = json.dumps({"schema": 1, "source": root, "entries": records}, ensure_ascii=True)
-if len(result.encode("utf-8")) > 1048576:
-    raise ValueError("Inventory exceeds 1 MiB")
-print(result)
+    result = json.dumps({"schema": 1, "source": root, "node": os.uname().nodename, "entries": records}, ensure_ascii=True)
+    if len(result.encode("utf-8")) > 1048576:
+        raise ValueError("Inventory exceeds 1 MiB")
+    print(result, end="\0", flush=True)
 '''
 
 
@@ -86,34 +91,39 @@ def ssh_command(target, script, *arguments):
             "-o", "ServerAliveCountMax=2", "-T", target, command]
 
 
-def ssh_inventory(target, source):
-    if not shutil.which("ssh"):
-        raise ValueError("SSH is required for the explicit SSH metadata mode.")
-    root = ssh_source(target, source)
-    env = os.environ.copy()
-    env.pop("RAYFILE_TOKEN", None)
-    code, response = read_response(ssh_command(target, SSH_INVENTORY, root), env,
-                                   label="SSH inventory")
+def ssh_inventory(session, root, *, final):
+    try:
+        session.stdin.write(b"scan\n")
+        session.stdin.flush()
+        if final:
+            session.stdin.close()
+    except BrokenPipeError:
+        raise ValueError("SSH inventory connection closed before the scan.") from None
+    code, response = read_response(session, label="SSH inventory", first_frame=not final)
     if code:
         detail = response.decode("utf-8", errors="replace")[:2048]
         detail = "".join(c if c in "\n\t" or ord(c) >= 32 and ord(c) != 127 else repr(c)[1:-1] for c in detail).strip()
         raise ValueError(f"SSH inventory failed (exit {code}); verify the existing SSH alias, known host and batch authentication locally.\n{detail}")
+    if not response.endswith(b"\0"):
+        raise ValueError("SSH inventory connection closed with an incomplete response.")
     try:
-        result = json.loads(response)
+        result = json.loads(response[:-1])
     except (UnicodeError, ValueError):
         raise ValueError("SSH inventory did not return complete structured metadata.") from None
     if not isinstance(result, dict) or result.get("schema") != 1 or result.get("source") != root or not isinstance(result.get("entries"), list):
         raise ValueError("SSH inventory has an unexpected schema or source.")
+    node = result.get("node")
+    if not isinstance(node, str) or not 0 < len(node) <= 255 or CONTROL.search(node):
+        raise ValueError("SSH inventory has an invalid node name.")
     entries = result["entries"]
     for entry in entries:
         if not isinstance(entry, dict) or any(type(entry.get(field)) is not int or entry[field] < 0 for field in ("size", "mtime_ns", "inode", "device")):
             raise ValueError("SSH inventory has invalid stat metadata.")
     selected_entries(entries)
-    return entries
+    return node, entries
 
 
-def inspect_ssh(args):
-    entries = ssh_inventory(args.target, args.source)
+def inspect_ssh(args, entries):
     chosen = selected_entries(entries, args.prefix, args.suffix)
     print(f"SSH source: {args.target}:{ssh_source(args.target, args.source)}")
     print(f"Inventory: {len(entries)} entries; selected: {len(chosen)}")
@@ -282,41 +292,41 @@ def native_probe_failed(code, output):
         output, re.I | re.M))
 
 
-def read_response(command, env, timeout=45, limit=MAX_RESPONSE, label="Rayfile metadata probe"):
-    output = bytearray()
-    deadline = time.monotonic() + timeout
-    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+@contextmanager
+def metadata_process(command, *, stdin=None):
+    env = os.environ.copy()
+    env.pop("RAYFILE_TOKEN", None)
+    with subprocess.Popen(command, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           env=env, start_new_session=True) as process:
         try:
-            with selectors.DefaultSelector() as ready:
-                ready.register(process.stdout, selectors.EVENT_READ)
-                while ready.get_map():
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        process.wait()
-                        raise ValueError(f"{label} timed out; operation stopped.")
-                    for key, _ in ready.select(min(remaining, 0.25)):
-                        chunk = os.read(key.fd, min(65536, limit + 1 - len(output)))
-                        if not chunk:
-                            ready.unregister(key.fileobj)
-                            continue
-                        output.extend(chunk)
-                        if len(output) > limit:
-                            os.killpg(process.pid, signal.SIGKILL)
-                            process.wait()
-                            raise ValueError(f"{label} exceeded the response limit; response discarded and operation stopped.")
-            remaining = deadline - time.monotonic()
-            try:
-                code = process.wait(timeout=max(remaining, 0.01))
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-                raise ValueError(f"{label} timed out; operation stopped.") from None
+            yield process
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
+
+
+def read_response(process, timeout=45, limit=MAX_RESPONSE, label="Rayfile metadata probe", *, first_frame=False):
+    output = bytearray()
+    deadline = time.monotonic() + timeout
+    with selectors.DefaultSelector() as ready:
+        ready.register(process.stdout, selectors.EVENT_READ)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not ready.select(remaining):
+                raise ValueError(f"{label} timed out; operation stopped.")
+            chunk = os.read(process.stdout.fileno(), min(65536, limit + 1 - len(output)))
+            if not chunk:
+                break
+            output.extend(chunk)
+            if len(output) > limit:
+                raise ValueError(f"{label} exceeded the response limit; operation stopped.")
+            if first_frame and chunk.endswith(b"\0"):
+                return 0, bytes(output)
+    try:
+        code = process.wait(timeout=max(deadline - time.monotonic(), 0.01))
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"{label} timed out; operation stopped.") from None
     return code, bytes(output)
 
 
@@ -340,9 +350,8 @@ def inspect_metadata(args):
     token = read_token()
     if not token.strip() or CONTROL.search(token):
         raise ValueError("A non-empty single-line token is required.")
-    env = os.environ.copy()
-    env.pop("RAYFILE_TOKEN", None)
-    code, response = read_response(probe_command(client, home, args.target, args.source, token, args.mode), env)
+    with metadata_process(probe_command(client, home, args.target, args.source, token, args.mode)) as process:
+        code, response = read_response(process)
     output = redact(response.decode("utf-8", errors="replace"), token)
     # Render terminal controls literally; credentials never enter retained logs.
     output = "".join(c if c in "\n\t" or ord(c) >= 32 and ord(c) != 127 else repr(c)[1:-1] for c in output)
@@ -519,10 +528,25 @@ def collision_name(name, index):
     return path.stem + '.' + str(index) + path.suffix
 
 
-def run_download(args):
+def first_source_change(before, after):
+    old = {item['path']: item for item in before}
+    new = {item['path']: item for item in after}
+    for path in sorted(old.keys() | new.keys()):
+        if path not in old:
+            return {'added': path[:1024]}
+        if path not in new:
+            return {'removed': path[:1024]}
+        if old[path] != new[path]:
+            fields = {key: [old[path][key], new[path][key]] for key in ('type', 'size', 'mtime_ns', 'inode', 'device')
+                      if old[path][key] != new[path][key]}
+            return {'path': path[:1024], 'fields': fields}
+    return {'order': 'changed'}
+
+
+def run_download(args, session, root):
     if args.target in ('hfcluster', 'tycluster'):
         print(f'[WARN] {args.target} uses the shared download workflow; real-server transfer has not been tested.', file=sys.stderr)
-    entries = ssh_inventory(args.target, args.source)
+    node, entries = ssh_inventory(session, root, final=False)
     chosen = selected_entries(entries, args.prefix, args.suffix)
     files = [item for item in chosen if item['type'] == 'file']
     if not files:
@@ -537,7 +561,7 @@ def run_download(args):
     stage = create_download_stage(args.destination)
     stage_identity = stage.stat()
     report = {'schema': 1, 'target': args.target, 'source': args.source,
-              'selected_files': len(files), 'completed_batches': 0}
+              'selected_files': len(files), 'completed_batches': 0, 'ssh_nodes': [node]}
     phase = 'prepare batches'
     try:
         groups = {}
@@ -565,8 +589,13 @@ def run_download(args):
                 os.link(batch_stage / target.name, target, follow_symlinks=False)
             report['completed_batches'] = index
         phase = 'verify source stability'
-        if ssh_inventory(args.target, args.source) != entries:
-            raise ValueError('SSH source metadata changed during transfer; final destination was not changed.')
+        final_node, final_entries = ssh_inventory(session, root, final=True)
+        report['ssh_nodes'].append(final_node)
+        if final_entries != entries:
+            report['source_change'] = first_source_change(entries, final_entries)
+            raise ValueError('SSH source metadata changed during transfer; see the diagnostic. Final destination was not changed.')
+        if final_node != node:
+            raise ValueError('SSH inventory node changed; final destination was not changed.')
         verified = verify_download(payload, chosen)
         phase = 'publish complete files'
         published = publish_download(verified, args.destination, collision_name)
@@ -611,10 +640,15 @@ def main():
                 raise ValueError("Destination and existing parents must be regular directories.")
         if args.mode == "validate":
             return 0
-        if args.mode == "ssh-list":
-            return inspect_ssh(args)
-        if args.mode == "run":
-            return run_download(args)
+        if args.mode in ("ssh-list", "run"):
+            if not shutil.which("ssh"):
+                raise ValueError("SSH is required for the explicit SSH metadata mode.")
+            root = ssh_source(args.target, args.source)
+            with metadata_process(ssh_command(args.target, SSH_INVENTORY, root), stdin=subprocess.PIPE) as session:
+                if args.mode == "run":
+                    return run_download(args, session, root)
+                _, entries = ssh_inventory(session, root, final=True)
+                return inspect_ssh(args, entries)
         return inspect_metadata(args)
     except KeyboardInterrupt:
         print("[ERROR] Operation interrupted; inspect any diagnostic for publication status.", file=sys.stderr)

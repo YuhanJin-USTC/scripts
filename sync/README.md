@@ -301,8 +301,10 @@ different parents into the same native destination. The source directory is
 removed once and inner paths, including duplicate basenames, are retained.
 
 Every batch must have exactly the selected regular files and byte sizes, with
-no links or extra objects. A second SSH inventory must match the first in
-path, type, size, modification time, inode and device. All batches must pass
+no links or extra objects. One SSH session scans the source directory before
+and after the Rayfile transfer on the same login node. The complete inventories
+must match in path, type, size, modification time, inode and device. A lost
+session stops verification. Each scan has its own 45-second limit. All batches must pass
 before publication. Production verification uses metadata and local sizes;
 it does not compute remote payload hashes or establish a filesystem snapshot.
 
@@ -319,8 +321,9 @@ Native/verification failures publish no files. If local publication itself
 fails or is interrupted, already published complete files remain and the error
 reports their count; publication is atomic per file, not across the whole batch.
 Task-created stages are cleaned. A small `.rayfile-stage-<id>.failure.json`
-beside the stage records the phase, counts and a bounded publication preview,
-without token or raw native output. It is retained for diagnosis.
+beside the stage records the phase, counts and a bounded publication preview.
+On a source mismatch it also records the login nodes and the first differing
+path with the changed stat values. Tokens and raw native output are excluded.
 
 The authorized 2026-10-31 WZ fixture contained seven fake files totaling
 85 bytes plus a separate link. Three parent batches reconstructed five selected

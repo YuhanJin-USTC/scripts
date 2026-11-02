@@ -143,7 +143,7 @@ def main [
     print "Probe: raw native response for this source only; filters and local destination are not used."
   }
   if $mode == "run" {
-    print "Transfer: SSH metadata before and after; Rayfile payload; complete verification before publication."
+    print "Transfer: one SSH session checks the source before and after the Rayfile download."
   }
   ^python3 -B $helper $mode ...$args
   let code = $env.LAST_EXIT_CODE

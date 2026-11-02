@@ -10,11 +10,10 @@ DOTFILES_DIR="$HOME/dot_files"
 SCRIPTS_DIR="$HOME/scripts"
 WORKFLOW_DIR="$HOME/Research_Workflow"
 SET_ROOT="$SCRIPT_DIR/data"
-HELPER="$SCRIPT_DIR/backup_set.py"
+SRC_DIR="$SCRIPT_DIR/src"
+HELPER="$SRC_DIR/backup_set.py"
 PREVIEW=false
 CORE_ARCH_PACKAGES=(python-pynvim ipython python-matplotlib python-pylatexenc)
-TOPIARY_NU_REVISION=18b7f951e0c511f854685dfcc9f6a34981101dd6
-TOPIARY_NU_SHA256=6507a874e74108a380a043daefffc71ed3ead75beb46101df21f0792800cdad1
 
 COLOR=false
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then COLOR=true; fi
@@ -28,7 +27,6 @@ status() {
   else printf '[%s] %s\n' "$label" "$message"; fi
 }
 field() { printf '%s: %s\n' "$1" "$2"; }
-step() { status "$1" "$2"; }
 usage() {
   printf '%s\n' "Usage: $0 [--preview]" "" \
     "Publish one verified Arch backup to data/github-current for Git." "" \
@@ -78,7 +76,7 @@ GPG_HOME_ID=""
 GPG_HOME=""
 ensure_crypto_home() {
   if [ -z "$GPG_ROOT" ]; then
-    IFS=$'\t' read -r GPG_ROOT GPG_ROOT_ID < <(python3 -IB "$SCRIPT_DIR/backup_crypto.py" start) || return 1
+    IFS=$'\t' read -r GPG_ROOT GPG_ROOT_ID < <(python3 -IB "$SRC_DIR/backup_crypto.py" start) || return 1
     GPG_HOME="$GPG_ROOT/gpg-home"
     GPG_HOME_ID=$(python3 -B "$HELPER" temp-id "$GPG_HOME") || return 1
   fi
@@ -89,7 +87,7 @@ stop_crypto_agent() {
   if [ -n "$GPG_ROOT" ]; then
     local path="$GPG_ROOT"
     GPG_ROOT=""
-    if ! CODEX_TEMP_CLEANUP=1 python3 -IB "$SCRIPT_DIR/backup_crypto.py" close "$path" "$GPG_ROOT_ID"; then
+    if ! CODEX_TEMP_CLEANUP=1 python3 -IB "$SRC_DIR/backup_crypto.py" close "$path" "$GPG_ROOT_ID"; then
       status ERROR "Private crypto directory retained for review: $path"
       return 1
     fi
@@ -146,9 +144,9 @@ archive_tree() {
     record "$name" --file "$name.tar.gz"
   fi
 }
-step 1/6 'Check published sources and record package names, exact observed versions and default shell.'
+status 1/6 'Check published sources and record package names, exact observed versions and default shell.'
 mkdir "$WORK_DIR/rebuild"
-python3 -B "$SCRIPT_DIR/rebuild_tools.py" capture --home "$HOME" --work "$WORK_DIR/source-check" >"$WORK_DIR/rebuild/downloads.json"
+python3 -B "$SRC_DIR/rebuild_tools.py" capture --home "$HOME" --work "$WORK_DIR/source-check" >"$WORK_DIR/rebuild/downloads.json"
 mkdir "$WORK_DIR/packages"
 pacman -Qqen >"$WORK_DIR/packages/pkglist-pacman.txt"
 pacman -Qqem >"$WORK_DIR/packages/pkglist-aur.txt"
@@ -157,7 +155,7 @@ pacman -Q "${CORE_ARCH_PACKAGES[@]}" >"$WORK_DIR/packages/jukit-core-versions.tx
 getent passwd "$(id -un)" | cut -d: -f7 >"$WORK_DIR/packages/default_shell.txt"
 archive_tree packages "$WORK_DIR/packages"
 
-step 2/6 'Archive selected system and home configuration.'
+status 2/6 'Archive selected system and home configuration.'
 mkdir "$WORK_DIR/system" "$WORK_DIR/home"
 for path in etc/pacman.conf etc/pacman.d/mirrorlist etc/makepkg.conf etc/wsl.conf etc/locale.conf etc/fstab; do
   if [ -e "/$path" ]; then
@@ -171,7 +169,7 @@ done
 archive_tree system "$WORK_DIR/system"
 archive_tree home "$WORK_DIR/home"
 
-step 3/6 'Encrypt credentials.'
+status 3/6 'Encrypt credentials.'
 [ -t 0 ] || { status ERROR 'Credential backup requires a local terminal for hidden passphrase input.'; exit 1; }
 read -r -s -p 'GPG passphrase: ' GPG_PASS
 printf '\n'
@@ -228,13 +226,13 @@ for component in scripts dot_files research_workflow nvim topiary rayfile; do
   record "$component" --absent 'No snapshot; downloads.json records selected published sources or source absence.'
 done
 
-step 4/6 'Record core editor tool versions and sources.'
-python3 -B "$SCRIPT_DIR/nvim_state.py" --home "$HOME" tools --sources-only --json >"$WORK_DIR/rebuild/editor_tools.json"
+status 4/6 'Record core editor tool versions and sources.'
+python3 -B "$SRC_DIR/nvim_state.py" --home "$HOME" tools --sources-only --json >"$WORK_DIR/rebuild/editor_tools.json"
 archive_tree rebuild "$WORK_DIR/rebuild"
-step 5/6 'Verify all component hashes and publish the completion marker.'
+status 5/6 'Verify all component hashes and publish the completion marker.'
 python3 -B "$HELPER" seal "$SET_DIR" >/dev/null
 cleanup_backup_tmp
-step 6/6 'Publish the verified component files for Git.'
+status 6/6 'Publish the verified component files for Git.'
 python3 -B "$HELPER" publish "$SET_DIR"
 SET_ID=""
 status OK "Complete backup set: $SET_ROOT/github-current (ID: ${SET_DIR##*/})"

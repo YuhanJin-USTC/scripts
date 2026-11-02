@@ -10,13 +10,18 @@ title, Target/Mode/Rule, stage numbers and status labels. Redirected output and
 | File | Purpose |
 | --- | --- |
 | `archlinux/backup.sh`, `restore.sh` | Backup and recovery order |
-| `archlinux/backup_set.py` | Set/archive validation, temporary ownership, file rollback and Stow |
-| `archlinux/rebuild_tools.py` | Published-source checks and pinned downloads/builds |
-| `archlinux/nvim_state.py`, `nvim_plugins.lua` | Managed editor lifecycle and real editor validation |
-| `archlinux/mason_tools.py` | Internal original-path Mason reconstruction |
-| `archlinux/rayfile_state.py` | Managed Rayfile installation and legacy snapshots |
-| `archlinux/backup_crypto.py`, `topiary_dependencies.py` | Private GPG lifetime and legacy ELF dependency checks |
-| `archlinux/data/github-current/` | The single current complete backup |
+| `archlinux/src/backup_set.py` | Set and archive validation, temporary ownership, file rollback and Stow |
+| `archlinux/src/rebuild_tools.py` | Published-source checks and pinned downloads/builds |
+| `archlinux/src/nvim_state.py`, `nvim_plugins.lua` | Editor lifecycle and isolated validation |
+| `archlinux/src/mason_tools.py` | Original-path Mason reconstruction |
+| `archlinux/src/rayfile_state.py` | Managed Rayfile installation and legacy snapshots |
+| `archlinux/src/backup_crypto.py`, `topiary_dependencies.py` | Private GPG lifetime and legacy ELF dependency checks |
+| `archlinux/data/github-current/` | The current complete backup |
+| `archlinux/data/legacy-incomplete-20261031/` | Existing historical data |
+
+The top-level `archlinux/nvim_state.py` and `archlinux/nvim_plugins.lua` are
+relative links into `src/`. Existing editor commands and the Arch update script
+use these paths. Both Bash entry points resolve their helpers from `src/`.
 
 ## Backup
 
@@ -67,11 +72,31 @@ the current set. Old tracked binary archives are not removed by editing
 
 ## Restore
 
-On the target device, synchronize any existing projects first. Use the updated
-scripts checkout; a format-1 scripts snapshot never overwrites this runner.
-GitHub access must work before online reconstruction. For a missing target
-account, the preflight can use privately staged SSH key/public-key pairs and
-saved known_hosts; it never disables host verification.
+On a fresh Arch device with Git and the target account `yuhanjin`, run this as
+that user when the scripts destination is absent:
+
+```bash
+git clone https://github.com/YuhanJin-USTC/scripts.git /home/yuhanjin/scripts
+cd /home/yuhanjin/scripts
+```
+
+On an existing device, synchronize existing projects first. Backup and restore
+read the public `YuhanJin-USTC/scripts` and `YuhanJin-USTC/dot_files`
+repositories over HTTPS. Existing SSH recipes work and local remotes keep their
+configured fetch and push settings. Git URL rewrites that redirect a project
+transfer must be reviewed. A global Git proxy at `127.0.0.1:7890` requires a
+running local proxy when used. A fresh clone needs no such setting.
+
+`Research_Workflow` requires GitHub authentication. Restore tries the target
+account's SSH identity with strict host checking. If the account lacks a usable
+identity or a known GitHub host, restore can use the encrypted backup's
+`.ssh/id_github` and `known_hosts` in
+`/tmp/arch-restore-user.<random>/github-ssh/` (directory 0700, files 0600).
+Only the Research_Workflow source checks and fetch receive this identity.
+Restore removes the copy when those operations finish and on ordinary failure
+or catchable interruption. Conflicting host keys stop preflight. When the
+account does not yet exist, restore uses the saved key pairs directly from
+private payload staging.
 
 ```bash
 bash backup/archlinux/restore.sh --preview
@@ -87,35 +112,29 @@ Running restore authorizes the listed managed replacements, package operations,
 pinned downloads/builds, Stow links and validated editor activation. There are
 no per-file replacement questions. GPG/sudo authentication remains necessary.
 
-1. Validate/decrypt the selected set in private staging. Check existing projects
-   for unpublished work before the first configuration replacement.
-2. Stage the recorded project commits. After verifying publication, restore
-   reads a complete matching checkout locally. Otherwise it fetches the pinned
-   objects with their file contents from GitHub before checkout. Existing
-   projects must match the origin and branch and allow a fast-forward. A
-   matching HEAD needs no deployment Git transaction. Errors identify the
-   project, the commit and the Git operation.
-3. Restore selected system settings and install Arch/AUR dependencies. Arch
-   packages follow current repositories; this is not a historical OS image.
-4. Rebuild editor and Topiary candidates and download Rayfile in staging before
-   deploying home configuration. The results table shows selected tools as
-   `pending` until this stage runs. Optional tools with a null source record
-   show `skipped`. Treesitter reports progress to the terminal and builds with
-   two jobs. Each grammar archive can retry up to three times, including after
-   a truncated TLS transfer. Runtime archives, the Topiary crate, the Rayfile
-   client, the Mason registry and remote Git fetches also retry transient
-   transport failures up to three times. Each retry identifies the artifact or
-   commit. HTTP authentication, missing assets and checksum failures stop these
-   transfers. Use `--use-tool-proxy` for tool downloads when the device has an
-   HTTP proxy at `127.0.0.1:7890`. The option also applies to HTTP(S) plugin
-   fetches, grammar downloads and Mason reconstruction.
-5. Deploy project/configuration changes and Stow links. Existing ignored local
-   files and device settings remain in existing checkouts. Effective encrypted
-   Git/rclone content must agree with its published Stow source; disagreement
-   stops preflight instead of asking which version to overwrite.
-6. Restore Topiary and the original-path Mason tools, validate the real editor,
-   and activate it automatically. Mason compares the compiler-resolved source
-   with the receipt, including version overrides; it never falls back to latest.
+1. Verify and privately stage the selected archives. Check existing projects
+   for unpublished work, stage pinned commits and check credentials, authority
+   and target differences before deploying files.
+2. Restore selected system configuration, prepare the target account and apply
+   the recorded system defaults.
+3. Install official packages and any recorded AUR packages. Pacman and yay
+   show their native transaction output and prompts.
+4. Rebuild the selected Neovim, Topiary and Rayfile candidates. Deploy project
+   fast-forwards, home configuration and credentials. A matching complete
+   checkout can supply file contents after the remote publication check.
+5. Preflight and deploy the managed Stow links.
+6. Install staged tools, reconstruct the original Mason paths, validate the
+   real editor and activate the verified generation. Check formatter and
+   linter records.
+7. Check and restore the default login shell.
+8. Remove invocation staging and show component results.
+
+The terminal uses numbered stages and indented subtask lines. Plugin, parser
+and Mason counts follow the selected tasks. Treesitter keeps two concurrent
+jobs and streams native diagnostics. Transient archive and Git failures can
+retry three times with the affected artifact or commit in each message.
+Authentication and checksum failures stop recovery. `--use-tool-proxy`
+enables the configured local HTTP proxy for tool downloads.
 
 Research_Workflow records and device identity are not replaced by another
 machine's snapshot. Different populated authority stops legacy recovery;
@@ -133,6 +152,13 @@ stay at `~/.local/share/rayfile-runtime` and `~/.local/bin/rayfile-c`.
 Transfers, credentials and native Raysync state are untouched.
 
 ## Failure and cleanup
+
+Backup assembles a set in `archlinux/data/<set-id>/` before atomic publication.
+Its private scratch space is `/tmp/arch-backup.<random>/`. Restore uses
+`/tmp/arch-restore-payload.<random>/` for checked payloads and its file journal,
+`/tmp/arch-restore-user.<random>/` for target-user helpers, sources, builds and
+its tool journal, and `/tmp/arch-restore-yay.<random>/` for an optional yay
+bootstrap. The private GPG home belongs to `/tmp/arch-crypto.<random>/`.
 
 Each invocation owns its staging and a temporary rollback journal. Successful
 restore removes the journal and staging. Ordinary errors and catchable signals

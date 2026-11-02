@@ -4,8 +4,10 @@
 
 These rules supplement the repository instructions under `backup/archlinux/`.
 The exact result owner is `root:scripts/backup/archlinux`. Keep the two Bash
-entry points and focused existing helpers; do not introduce a framework or
-parallel instruction files. Usage belongs in `backup/README.md`.
+entry points at the top level and the eight Python/Lua tools together in `src/`.
+Preserve the two relative Neovim compatibility links at their old paths.
+Usage belongs in `backup/README.md`. Do not introduce a framework or parallel
+instruction files.
 
 ## Backup contract
 
@@ -52,6 +54,14 @@ parallel instruction files. Usage belongs in `backup/README.md`.
   Use real Stow with no-folding and journal every changed managed destination.
 - Keep archive traversal, type/link, synthetic-parent and permission checks.
   Never copy staging 0700 modes onto unrelated parents or write through links.
+- Use HTTPS only for the two public project transfers and SSH for
+  Research_Workflow. Validate the exact GitHub repository at staging and
+  deployment. Preserve recorded origins and existing checkouts' Git settings.
+- Limit the existing-account SSH fallback to the saved GitHub identity and
+  known_hosts under the invocation's private github-ssh directory. Keep strict
+  host verification and remove that copy as soon as the source checks finish.
+- Use eight numbered stages and indented subtask lines. Preserve native package
+  output, streamed parser diagnostics and machine-readable helper stdout.
 - Keep network/build output under invocation staging. Package upgrades, new
   accounts and generated system databases are not file-rollback guarantees.
 - Keep the disposable Pacman/yay package cache outside private staging. Its

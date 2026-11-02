@@ -54,10 +54,29 @@ def remote_fetch(label, *args):
     return sets.retry_transfer(label, fetch)
 
 
-def url(value):
-    if not isinstance(value, str) or not re.fullmatch(r'(?:https://github.com/|git@github.com:)[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?', value):
+def repository_id(value):
+    pattern = r'(?:https://github\.com/|git@github\.com:)([\w.-]+)/([\w.-]+)'
+    match = re.fullmatch(pattern, value, re.ASCII) if isinstance(value, str) else None
+    if not match:
         raise ValueError('Expected a GitHub HTTPS or SSH repository URL without credentials.')
-    return value
+    owner, name = match.groups()
+    name = name.removesuffix('.git')
+    if owner in ('.', '..') or name in ('', '.', '..'):
+        raise ValueError('Invalid GitHub repository path.')
+    return f'{owner}/{name}'.lower()
+
+
+def fetch_url(remote, directory, checkout):
+    identity = repository_id(remote)
+    if directory is None:  # Plugin origins retain their recorded transport.
+        return remote
+    project = f'YuhanJin-USTC/{directory}.git'
+    if identity != project.removesuffix('.git').lower():
+        raise RuntimeError(f'Unexpected GitHub repository for {directory}: {identity}')
+    target = ('git@github.com:' if directory == 'Research_Workflow' else 'https://github.com/') + project
+    if git(checkout, 'ls-remote', '--get-url', '--', target) != target:
+        raise RuntimeError(f'Git URL rewrite changes the recovery address for {directory}.')
+    return target
 
 
 def published(path, scratch, *, plugin=False, scripts=False):
@@ -70,17 +89,18 @@ def published(path, scratch, *, plugin=False, scripts=False):
     changes = git(path, *args).splitlines()
     if changes:
         raise RuntimeError(f'Uncommitted files in {path}; commit and push first:\n' + '\n'.join(changes[:15]))
-    remote = url(git(path, 'remote', 'get-url', 'origin'))
+    remote = git(path, 'remote', 'get-url', 'origin')
     commit = git(path, 'rev-parse', 'HEAD')
     branch = git(path, 'branch', '--show-current')
     refs = git(path, 'for-each-ref', '--format=%(objectname)', 'refs/heads').splitlines() if not plugin else []
     probe = scratch / 'remote.git'
     if not probe.exists():
         run(['git', 'init', '--bare', '-q', probe])
+    transport = fetch_url(remote, None if plugin else path.name, probe)
     for revision in sorted(set([commit, *refs])):
         try:
             remote_fetch(f'{path.name} publication check {revision[:12]}', '--git-dir', probe,
-                         'fetch', '--quiet', '--depth=1', '--filter=blob:none', '--no-tags', '--', remote, revision)
+                         'fetch', '--quiet', '--depth=1', '--filter=blob:none', '--no-tags', '--', transport, revision)
         except RuntimeError as error:
             raise RuntimeError(f'{path}: commit {revision[:12]} is not confirmed on origin; push it or fix network access. {error}') from None
     return {'url': remote, 'commit': commit, 'branch': branch}
@@ -92,13 +112,14 @@ def download(source, target, expected, *, label=None):
     nvim.download(source, target, expected=expected, label=label)
 
 
-def clone(record, target, source=None):
-    remote = url(record['url'])
+def clone(record, target, source=None, project=None):
+    remote = record['url']
     commit = record['commit']
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
         raise ValueError('Invalid repository commit.')
     target.mkdir()
     git(target, 'init', '--quiet')
+    transport = fetch_url(remote, project, target)
     git(target, 'remote', 'add', 'origin', remote)
     branch = record.get('branch')
     refs = [commit]
@@ -107,7 +128,7 @@ def clone(record, target, source=None):
         refs.append(f'refs/heads/{branch}:refs/remotes/origin/{branch}')
     # Projects need ancestry for fast-forward checks. Plugins need just the pin.
     depth = [] if 'branch' in record else ['--depth=1']
-    fetch_args = ('fetch', '--no-tags', '--no-recurse-submodules', *depth, '--', source or 'origin', *refs)
+    fetch_args = ('fetch', '--no-tags', '--no-recurse-submodules', *depth, '--', source or transport, *refs)
     if not source:
         remote_fetch(f'{target.name} fetch from origin {commit[:12]}', '-C', target, *fetch_args)
     operation = 'fetch from local checkout'
@@ -200,6 +221,15 @@ def check_targets(home, scratch, selected=None):
         path = home / directory
         if path.exists() or path.is_symlink():
             published(path, scratch, scripts=directory == 'scripts')
+        else:
+            print(f'  [SKIP] No existing checkout for {directory}', file=sys.stderr, flush=True)
+
+
+def check_checkout(local, record):
+    if repository_id(git(local, 'remote', 'get-url', 'origin')) != repository_id(record['url']):
+        raise RuntimeError(f'Repository origin differs: {local}')
+    if git(local, 'branch', '--show-current') != record['branch']:
+        raise RuntimeError(f'Project branch differs from the backup: {local}; select the intended branch first.')
 
 
 def stage_projects(recipe, home, stage, scratch, keep_workflow=False, selected=None):
@@ -212,17 +242,14 @@ def stage_projects(recipe, home, stage, scratch, keep_workflow=False, selected=N
         source = None
         old = None
         if local.exists():
-            if url(git(local, 'remote', 'get-url', 'origin')) != record['url']:
-                raise RuntimeError(f'Repository origin differs: {local}')
+            check_checkout(local, record)
             old = git(local, 'rev-parse', 'HEAD')
-            if git(local, 'branch', '--show-current') != record['branch']:
-                raise RuntimeError(f'Project branch differs from the backup: {local}; select the intended branch first.')
             if old == record['commit'] and git(local, 'rev-parse', '--is-shallow-repository') == 'false':
                 keys = git(local, 'config', '--local', '--name-only', '--list').splitlines()
                 if not any(key == 'extensions.partialclone' or key.endswith(('.promisor', '.partialclonefilter')) for key in keys):
                     source = local
-        print(f'[SOURCE] {directory} {record["commit"][:12]} ({"local" if source else "origin"})', flush=True)
-        clone(record, dest, source)
+        print(f'  [RUN] Stage {directory} {record["commit"][:12]} ({"local" if source else "origin"})', file=sys.stderr, flush=True)
+        clone(record, dest, source, directory)
         if old is not None:
             # A newer/divergent target needs a fresh backup, never a history reset.
             git(dest, 'merge-base', '--is-ancestor', old, record['commit'])
@@ -261,7 +288,7 @@ def build_editor(recipe, config, target, home):
             raise RuntimeError('Recorded active lockfile/configuration checksum differs.')
         runtime = record['runtime_source']
         label = f'Neovim {runtime["tag"]} runtime ({runtime["url"].rsplit("/", 1)[-1]})'
-        print(f'[nvim] Downloading {label}', file=sys.stderr, flush=True)
+        print(f'  [RUN] Download {label}', file=sys.stderr, flush=True)
         archive = candidate / 'runtime.tar.gz'
         download(runtime['url'], archive, runtime['archive_sha256'], label=label)
         unpack = candidate / 'unpack'
@@ -273,7 +300,7 @@ def build_editor(recipe, config, target, home):
         for index, (name, plugin) in enumerate(record['plugins'].items(), 1):
             if not nvim.NAME.fullmatch(name):
                 raise ValueError('Invalid plugin name.')
-            print(f'[nvim {index}/{len(record["plugins"])}] {name} {plugin["commit"][:12]}', file=sys.stderr, flush=True)
+            print(f'  [{index}/{len(record["plugins"])}] Neovim plugin  {name} {plugin["commit"][:12]}', file=sys.stderr, flush=True)
             clone(plugin, candidate / 'data/nvim/lazy' / name)
         manifest = {**record, 'format': 2, 'generation': 'downloaded', 'status': 'prepared',
                     'validated': False, 'keep_versions': True}
@@ -309,6 +336,7 @@ def build_topiary(record, config, target):
     env = {**os.environ, 'CARGO_HOME': str(target / 'cargo'), 'CARGO_TARGET_DIR': str(target / 'build'),
            'TMPDIR': str(target / 'tmp'), 'XDG_CACHE_HOME': str(target / 'cache')}
     (target / 'tmp').mkdir()
+    print(f'  [RUN] Compile Topiary {record["version"]}', file=sys.stderr, flush=True)
     run(['/usr/bin/cargo', 'install', '--locked', '--path', source, '--root', target / 'install'], env=env, timeout=1800)
     binary = target / 'install/bin/topiary'
     if run([binary, '--version']) != 'topiary-cli ' + record['version']:
@@ -330,6 +358,7 @@ def stage_rayfile(record, target):
         raise RuntimeError('Unknown Rayfile download pin.')
     target.mkdir()
     archive = target / 'download.tar.gz'
+    print(f'  [RUN] Download Rayfile {record["version"]}', file=sys.stderr, flush=True)
     download(record['source_url'], archive, record['archive_sha256'], label='Rayfile client ' + record['version'])
     runtime = target / 'rayfile-runtime'
     runtime.mkdir()
@@ -351,7 +380,7 @@ def stage_rayfile(record, target):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('capture', 'check-targets', 'projects', 'editor', 'topiary', 'rayfile'))
+    parser.add_argument('command', choices=('capture', 'check-targets', 'check-checkout', 'projects', 'editor', 'topiary', 'rayfile'))
     parser.add_argument('--home', type=Path, default=Path.home())
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--recipe', type=Path)
@@ -366,13 +395,18 @@ def main():
         signal.signal(signum, interrupted)
     try:
         args.work.mkdir(parents=True, exist_ok=True)
-        recipe = sets.read_json(args.recipe) if args.recipe else None
+        if args.command == 'check-checkout':
+            recipe = json.load(sys.stdin, object_pairs_hook=sets.pairs)
+        else:
+            recipe = sets.read_json(args.recipe) if args.recipe else None
         if recipe is not None and (not isinstance(recipe, dict) or recipe.get('format') != 1):
             raise ValueError('Unsupported download recipe.')
         if args.command == 'capture':
             print(json.dumps(capture(args.home, args.work), sort_keys=True))
         elif args.command == 'check-targets':
             check_targets(args.home, args.work, args.project)
+        elif args.command == 'check-checkout':
+            check_checkout(args.home / PROJECTS[args.project], recipe['projects'][args.project])
         elif args.command == 'projects':
             stage_projects(recipe, args.home, args.target, args.work, args.keep_local_workflow, args.project)
         elif args.command == 'editor':

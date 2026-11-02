@@ -65,7 +65,7 @@ any command.
 | PIC image smoke tests | **Real test** | Add `--dry-run` to preview |
 | Cluster Jupyter lifecycle | **Real** | Use explicit `start`, `connect`, `status`, or `stop` |
 | MATLAB Figure Browser | **Real, foreground** | Start or reuse the app; `--no-open` suppresses browser launch |
-| Arch backup and restore | **Real** | `--preview` inspects the documented subset; restore requires an exact set or interactive choice |
+| Arch backup and restore | **Real** | `--preview` inspects the documented subset; restore defaults to the current set |
 | Key transfer, Git update, PIC run, ASR/MT | **Real** | No dry run |
 
 A preview can still read external state. NAS and cluster rsync previews, iWAN
@@ -82,10 +82,10 @@ Important boundaries:
 - Container builds use `build --force` and may replace an existing SIF.
 - Cluster Jupyter sessions use Slurm compute nodes, preserve token
   authentication, and never upload the configured SIF automatically.
-- Backup publishes a single verified set in `data/github-current/`. Restore preflights staged
-  components, shows exact differences and preserves safety backups before writes;
-  it installs packages and runs Stow only with explicit confirmation, without
-  force-syncing user repositories.
+- Backup publishes one verified set in `backup/archlinux/data/github-current/`.
+  Restore checks pinned project sources before scoped replacement and installs
+  packages and Stow links during the authorized recovery. The two public
+  projects use HTTPS and Research_Workflow uses SSH.
 - Neovim preparation and offline restore create isolated candidates. Activation
   and rollback are separate exact operations; previous and failed generations
   remain available.
@@ -120,10 +120,10 @@ Detailed guides:
 - [NAS and cluster sync](sync/README.md)
 - [Arch, iWAN, and Git updates](update/README.md)
 
-Arch backup also snapshots the official Rayfile fast-transfer client under
+Arch backup also records the source and checksums for the Rayfile client under
 `~/.local/share/rayfile-runtime`, with its entry point at `~/.local/bin/rayfile-c`.
-See [Rayfile installation and recovery](backup/README.md#rayfile) for the
-locked program snapshot, device-local logs and transfer-validation limits.
+See [Rayfile installation and recovery](backup/README.md#restore) for the
+pinned client and transfer-validation limits.
 
 ## Nushell Commands
 
@@ -183,8 +183,9 @@ other SSH hosts retain their original behavior.
 Fast preview stays offline. `--list` and `--attributes` are separately authorized
 read-only probes of the exact source, not filtered download plans. Complete
 SSH inventories and a tiny WZ transfer fixture have passed acceptance. All three
-clusters use Rayfile batches by parent directory, verify every file and source
-metadata stability, then preserve existing files with incoming numbered names.
+clusters use Rayfile batches by parent directory and verify source metadata
+before and after the transfer on one SSH session. Incoming collisions receive
+numbered names.
 HF/TY share this workflow but remain untested against their servers; `--run`
 prints that status and proceeds with the same checks. Upload keeps its existing
 behavior.
