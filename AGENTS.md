@@ -1,73 +1,21 @@
 # scripts Agent Instructions
 
-## Scope and Authority
+## Scope
 
-These instructions apply to the repository rooted at `/home/yuhanjin/scripts`.
-Read the nearest nested `AGENTS.md` before working in a subsystem; nested files
-contain only subtree-specific rules and inherit this file. Container PIC and
-post-processing differences live in `build_containers/AGENTS.md`. Explicit user
-instructions take priority within the authorized scope.
+Read this file, the owning subsystem rules, README, implementation and callers. Keep this toolkit script-first, with public usage in README and local exceptions in the owning AGENTS.md. PIC and post-processing share build_containers/AGENTS.md. Do not add parallel instructions, frameworks, dependency layers or a host Python environment merely to reorganize scripts.
 
-`README.md` is the human-facing behavior and usage guide. Keep durable agent
-rules here and subsystem differences in the owning nested `AGENTS.md`. Do not
-create parallel instruction files such as `AGENT.md`, `CLAUDE.md`, or
-tool-specific rule files unless the user requests them.
-
-This is a personal, script-first research toolkit. Prefer direct changes that
-reduce friction in laser-plasma research, PIC simulation, data movement, system
-maintenance, and local automation. Do not add a framework, package hierarchy,
-task runner, generated configuration layer, or host Python environment merely
-to make the repository resemble an application project.
+For a change to core logic, name the script and entry point, current and proposed behavior and affected callers, data and outputs. Obtain explicit approval covering that change. One specific approval suffices. A general optimization request grants no core change.
 
 ## Common Safety
 
-- Do not delete, move, replace, clean, prune, or overwrite user content without
-  explicit approval for the exact paths. Protect research data, inputs,
-  outputs, source, credentials, backups, archives, encrypted files, package
-  lists, and configuration.
-- Do not modify `backup/archlinux/data`, key material, GPG data, or other
-  protected payloads unless the user explicitly includes them.
-- Classify commands before execution as read-only, preview, or state-changing.
-  State-changing work requires explicit user intent; destructive, privileged,
-  credential, broad-overwrite, or remote operations also require confirmation
-  immediately before execution when it is not already explicit.
-- Require explicit approval before invoking workflows involving `rm`,
-  `rm -rf`, `git reset --hard`, `git clean`, `rsync --delete`, `scp`, `sudo`,
-  `gpg`, `pacman`, `yay`, restore, SSH-key copying, forced Git synchronization,
-  or broad overwrite behavior. The exact task-created temporary cleanup allowed
-  below is the only standing exception.
-- Never run synchronization, transfer, cleanup, package update, backup,
-  restore, key deployment, iWAN write, Git mutation, container build or smoke
-  test, PIC run, or media-generation workflow merely to validate a change.
-- Do not run Git commands, including `git status`, `git add`, or `git commit`,
-  unless the user explicitly requests Git work.
-- Prefer source inspection, syntax checks, command construction review, and a
-  documented non-mutating preview. Inspect argument handling before assuming
-  that `--help` or a dry run is safe.
-- Never use a research directory, source tree, mounted drive, NAS path,
-  cluster path, backup location, or user media as disposable test data.
-- Remove only temporary artifacts created by the current task. Mark the exact
-  cleanup command with `CODEX_TEMP_CLEANUP=1`; preserve failed diagnostic
-  artifacts when the owning subsystem requires them.
-- Keep credentials, private keys, tokens, passphrases, and sensitive payload
-  content out of commands, logs, metadata, and responses.
+- Protect research data, inputs/outputs, sources, backups, archives, encrypted files, package lists, configs, backup/archlinux/data, GPG and keys. Get exact approval before deleting, moving, replacing or overwriting user content. Keep secrets out of commands, logs, metadata and replies.
+- Classify each command as read, preview or write. Require explicit scope for state changes, privilege, credentials, remote work and all Git, including status/add/commit. This includes rm, rm -rf, git reset --hard, git clean, rsync --delete, scp, sudo, gpg, pacman, yay, restore, SSH-key copying, forced sync and broad overwrites.
+- Never run transfers, cleanup, updates, backup/restore, key deployment, iWAN writes, builds, smoke tests, PIC or media generation merely to validate code. Inspect help/preview branches for external reads. Use only approved temporary fixtures, never research trees, mounts, NAS, cluster paths, backups or user media.
+- Remove only exact task-owned temporary artifacts with CODEX_TEMP_CLEANUP=1. Preserve required failure evidence.
 
-## Common Work Procedure
+## Procedure
 
-1. Read this file, the nearest nested `AGENTS.md`, the relevant `README.md`
-   sections, and every affected script, template, rule file, and caller.
-2. Trace arguments, intentional absolute paths, generated files, overwrite or
-   deletion behavior, external commands, and cross-project writes end to end.
-3. Confirm the authorized target and preserve unrelated user changes. Treat
-   each registered research root as a separate write scope.
-4. Make the smallest coherent change. Preserve public flags, defaults, output
-   locations, shell choice, and directory layout unless the task changes them.
-5. Run the narrowest safe validation. Do not turn validation into a real
-   external operation.
-6. Re-read every changed file directly; do not use Git to review changes unless
-   Git work was requested.
-7. Update `README.md` and the applicable `AGENTS.md` when interfaces,
-   dependencies, paths, safety behavior, validation, or layout change.
+Trace arguments, outputs, absolute paths, external commands and cross-root writes. Preserve public flags, defaults, output locations, shell and layout. Reread changed files directly. Keep code, help, README and templates consistent. For durable interface, ownership, safety or validation changes, show the owning AGENTS.md diff for approval.
 
 Preserve established identifiers and paths unless the user changes them,
 including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
@@ -78,25 +26,9 @@ including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
 
 ## Common Style
 
-- Match nearby organization, naming, command construction, diagnostics, and
-  comment density. Keep comments short and in English; do not narrate obvious
-  code.
-- Name new directories by domain and prefer full `snake_case` verb-object names
-  for new entry scripts. Treat the compatibility names documented in
-  `README.md`, including `bd_*`, `tsf_clst_key`, `windows2cluster`, and
-  `cluster2windows`, as deliberate public exceptions. Preserve established
-  scientific target tokens such as `epoch1d`, `epoch2d`, `epoch3d`, and
-  `smilei_spin`.
-- Keep user-editable paths, target records, image names, job counts, and common
-  parameters explicit and near the top when practical.
-- Resolve sibling scripts, templates, and rule files from the current script
-  location. Keep deliberate external research, image, mount, Windows, and
-  cluster paths explicit rather than hiding them behind discovery logic.
-- Preserve intentional absolute paths and shebangs. Do not rewrite working code
-  solely for style or perform repository-wide formatting.
-- Keep command output concise. Preserve established `Target`, `Mode`, and
-  `Rule` fields and status tags such as `[DRY-RUN]`, `[OK]`, `[SKIP]`, and
-  `[ERROR]` where the script already uses them.
+- Match local organization, naming, diagnostics and short English comments. Use domain directories and full snake_case verb-object names for new entries. Preserve README compatibility names (bd_*, tsf_clst_key, windows2cluster, cluster2windows) and scientific tokens (epoch1d, epoch2d, epoch3d, smilei_spin).
+- Keep editable paths, targets, images, jobs and parameters explicit near use. Resolve sibling assets from the script. Preserve intentional external research, image, mount, Windows and cluster paths.
+- Preserve intentional absolute paths and shebangs. Avoid unrelated formatting.
 - Use the output order title, `Target`, `Mode`, `Rule`, then workflow-specific
   fields. Use `[DRY-RUN]` for preview guarantees, `[n/N]` for a stage that is
   starting, `[OK]` only after success, `[SKIP]` for an intentional omission,
@@ -108,13 +40,7 @@ including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
   arguments, options, and useful examples; parse help and invalid arguments
   before dependency checks or external reads. Preserve each workflow's
   established preview-by-default, real-by-default, or real-only mode.
-- Use short English comments only for intent, safety, invariants, or
-  non-obvious platform behavior. Remove comments that merely restate the next
-  command, but retain warnings about overwrite, deletion, remote-path,
-  trailing-slash, credential, rollback, and reproducibility behavior.
-- Do not silently invert an execution default or rename a public flag. If a
-  mode changes, update help text, examples, `README.md`, and all affected rules
-  in the same task.
+- Keep concise warnings for overwrite, deletion, remote paths, trailing slashes, credentials, rollback and reproducibility. Explicit changes to public flags or modes require updated help, examples, README and approved rule changes.
 
 ### Bash
 
@@ -141,13 +67,7 @@ including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
 
 ### Python
 
-- Keep helpers focused with `argparse` entry points and explicit UTF-8 text
-  handling. Keep heavyweight model or CUDA assumptions visible near use.
-- Use `snake_case`, `UPPER_SNAKE_CASE` constants, lightweight type annotations,
-  a `main()` function, and `raise SystemExit(main())`. Keep progress and errors
-  on stderr when stdout carries a machine-readable result.
-- Do not add a host dependency manifest or package structure for code intended
-  to run inside a container unless requested.
+- Use argparse, explicit UTF-8, snake_case, UPPER_SNAKE_CASE constants, lightweight annotations, main() and raise SystemExit(main()). Keep heavyweight model/CUDA assumptions visible. Send progress/errors to stderr when stdout is machine-readable. Container helpers need no host package or manifest unless requested.
 
 ### PowerShell
 
@@ -158,36 +78,9 @@ including `yuhanjin`, `YuhanJin-USTC`, `17865`, `ac58qn21ek`, `金虞焓`,
   Use the shared header, field, and status conventions instead of scattered
   `Write-Host` diagnostics.
 
-## Instruction Ownership
+## Research ownership
 
-Keep common safety, style, validation and result-recording rules here. The
-backup, container, cleanup, media, runtime, sync, key-deployment and update
-subtrees own their distinct risks. Usage belongs in the existing README;
-completed results belong in existing Research Workflow events, not new memory
-files. Do not remove a managed target by deleting its allowlist entry.
-Target retirement needs a same-root ancestor, a fresh policy plan and actual
-user approval; body edits and final file deletion are separate exact approvals.
-
-## Research Workflow Contract
-
-- Restore compact memory with
-  `python3 -B /home/yuhanjin/Research_Workflow/tools/researchctl.py context "root:scripts/<exact-directory>" --json`.
-  Use `root:scripts` for root-wide work and explicit `--recursive` only for an
-  intended subtree; then inspect necessary direct evidence.
-- Do not create Cards, Worklogs, empty research membership or invented history.
-  Record one substantive result with an event-only checkpoint at the exact
-  subsystem owner. Retain purpose, result, accepted reasons, validation level
-  and limits where known. Configured and registered device identity is required.
-- Record an event once at the most specific owner. A repository-wide agent or
-  documentation standardization event belongs at the repository root rather
-  than being copied into every subsystem. A cross-root atomic task has one
-  primary owner and lists every affected path.
-- Keep `.research-workflow/index.sqlite3` local and non-authoritative; context
-  queries may transparently create or refresh this derived cache.
-- Do not log pure Q&A, planning, read-only inspection, or an unsuccessful task
-  with no durable result. Use concise English and exclude secrets, raw output,
-  full conversations, and unsupported conclusions.
-
+Use `python3 -B /home/yuhanjin/Research_Workflow/tools/researchctl.py context "root:scripts/<exact-directory>" --view compact --json`, or root:scripts for repository-wide work. Recurse only for a requested subtree. Checkpoint one durable result at its most specific owner. For joint work, list the affected paths at one primary owner. Keep history in the control repo. Retirement requires an approved same-root ancestor plan. Body edits and deletion need separate approval.
 ## Validation
 
 Use the narrowest applicable baseline:
@@ -214,33 +107,18 @@ Additional requirements:
 - If an executable or external path is unavailable, report the skipped check.
   Do not install dependencies, fabricate paths, or weaken a guard.
 
-## Completion
-
-A task is complete only when:
-
-- the requested behavior or documentation is implemented without unrelated
-  refactoring;
-- user content, protected data, credentials, and unrelated edits remain
-  untouched;
-- public interfaces and intentional paths are preserved unless explicitly
-  changed;
-- applicable safe checks pass, or every skipped check is explained;
-- no real external-state workflow was run merely for validation;
-- task-created temporary artifacts are removed under the cleanup contract;
-- code, help, `README.md`, templates, rules, and agent instructions agree; and
-- the handoff lists changed paths, validation, skipped operations, and all
-  remaining `unknown` or `to-confirm` items.
+Report changed paths, completed and skipped checks, and unresolved unknown or to-confirm items. Verify public behavior, task outputs and cleanup before handoff.
 <!-- research-workflow:policy:start -->
-<!-- digest: 89d09a6994f49df8c13b524a2af6ad0acf361194fc848c001cb517be1ee3a44f -->
+<!-- digest: 255425630765de0b777c8b315a1469fc936fca419187535850dcd16888fc5f5d -->
 ## Managed Research Workflow Policy
 
-- `case-confirmation`: "A Case target does not imply a Case edit. For explicit registration or simulation-definition changes, finish files/checks, show the saved preview, actually ask and await the user, then apply the exact plan. A digest is not consent; unchanged accepted definitions add no revision."
-- `external-operations`: "Do not run cluster, simulation, MATLAB, network, sync, build, or Git mutations without explicit user authorization."
-- `framework-authority`: "Use Research Workflow 0.2.4 and the unversioned researchctl CLI. Preserve journal-only Case authority, original Event fields, historical migrate/tombstone bindings, immutable streams, and fail-closed forks."
-- `indexing`: "Treat SQLite and saved plans as device-local derived state. Queries may refresh the disposable index; never synchronize it or use it as authority."
-- `multi-device`: "Synchronize and check portable authority before context or any portable write after switching devices, including event-only work. Keep local TOML/device/paths, upgrade devices sequentially, and stop old metadata writers until local acceptance. External sync remains separately authorized."
-- `propagation`: "Preview pending policy semantics, exact targets and differences; obtain real user approval of the stable digest, record it through policy approve, then apply. Preserve cumulative device approvals and unmanaged AGENTS bytes; Data/Notes and body patches require exact separate scope."
-- `recording`: "Restore bounded Case, Study, Project, or exact root/path memory. Record one substantive result as an event at the most specific owner; retain purpose, result, accepted reasons, validation level and limits in existing summary/evidence. Do not log ordinary Q&A or create empty membership or pending queues."
-- `workspace-routing`: "Resolve local access through verified roots and explicit mappings. Logical memory may be queried without a local mapping, but new writes require local registration. Keep Data read-only and Notes access within exact authorized links/sections."
+- `case-confirmation`: "Case ownership alone changes no definition. For registration, definition or lifecycle changes, finish files/checks, show the saved plan, ask and await consent, then apply its digest. Equal definitions add no revision."
+- `external-operations`: "Require explicit task authorization for Git, network/API, SSH, cluster, transfer, sync, simulation, MATLAB, builds, containers and SIF operations."
+- `framework-authority`: "Use Research Workflow 0.2.4 and its unversioned CLI. Preserve journal-only Cases, original Event fields, migrate/tombstone bindings and immutable streams. Stop on forks."
+- `indexing`: "SQLite and saved plans are disposable device-local state. Queries may refresh SQLite. Never sync either or use it as authority."
+- `multi-device`: "After a switch, preserve local work and separately authorize sync. Check portable authority with doctor, event merge and validate before context or any portable write. Keep TOML, paths and identity local. Upgrade sequentially with old writers stopped through acceptance."
+- `propagation`: "Show pending semantics, exact targets, diffs and stable digest. After user approval, record it with policy approve and apply that digest. Preserve cumulative approvals and unmanaged bytes. Data, Notes and body patches need separate exact scope."
+- `recording`: "Restore compact Case, Study, Project or exact root/path context. Record one substantive result at its closest eligible owner, with purpose, result, accepted reasons, checks and limits in summary/evidence. Skip ordinary discussion, empty membership and pending queues."
+- `workspace-routing`: "Use verified roots and explicit mappings. Unmapped logical memory is readable. Local access and new writes need registration. Data stays read-only. Scope Notes to exact links/sections and writes to explicit requests."
 
 <!-- research-workflow:policy:end -->
