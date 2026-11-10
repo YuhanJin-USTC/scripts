@@ -4,7 +4,7 @@ source ../build_common.nu
 
 # Build PIC program images from local source.
 def main [
-  program: string # epoch1d, epoch2d, epoch3d, smilei or smilei_spin
+  program: string # epoch1d, epoch2d, epoch3d, epoch3d_intelmpi, smilei or smilei_spin
   --dry-run       # print config only
 ] {
   # Target configuration.
@@ -52,6 +52,22 @@ def main [
       exec_name: "epoch3d"
       epoch_dim: "epoch3d"
       epoch_compiler: "gfortran"
+      clean_items: "epoch1d epoch2d doc .git .github .gitignore License README.md AGENTS.md"
+    }
+    epoch3d_intelmpi: {
+      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_Photon_Probe_2026/epoch"
+      env_image: "/home/yuhanjin/Code_Program/Env/Epoch/epoch_env_intelmpi.sif"
+      work_dir: "/home/yuhanjin/Code_Program/Epoch/Epoch3d"
+      image_name: "epoch_epoch3d_photon_probe_work_intelmpi.sif"
+      template_name: "epoch.def.tmpl"
+      build_dir: "/opt/.local/program/epoch_build"
+      tar_name: "epoch_source.tar.gz"
+      tar_target: "/opt/.local/program/source.tar.gz"
+      jobs: 8
+      exec_name: "epoch3d"
+      epoch_dim: "epoch3d"
+      epoch_compiler: "gfortran"
+      mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
       clean_items: "epoch1d epoch2d doc .git .github .gitignore License README.md AGENTS.md"
     }
     smilei: {
@@ -172,5 +188,6 @@ def image-template-values [cfg: record env_image: string] {
     CLEAN_ITEMS: $cfg.clean_items
     EPOCH_COMPILER: ($cfg.epoch_compiler? | default "")
     EPOCH_DIM: ($cfg.epoch_dim? | default "")
+    MPI_ROOT: ($cfg.mpi_root? | default "")
   }
 }

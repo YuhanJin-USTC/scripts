@@ -4,7 +4,7 @@ source ../build_common.nu
 
 # Build PIC environment images.
 def main [
-  program: string # epoch, smilei or smilei_spin
+  program: string # epoch, epoch_intelmpi, smilei or smilei_spin
   --dry-run       # print config only
 ] {
   # Target configuration.
@@ -15,6 +15,14 @@ def main [
       template_name: "epoch_env.def.tmpl"
       docker_image: "ubuntu:20.04"
       apt_packages: "build-essential gfortran make mpich libmpich-dev wget openssh-client zlib1g-dev"
+    }
+    epoch_intelmpi: {
+      work_dir: "/home/yuhanjin/Code_Program/Env/Epoch"
+      image_name: "epoch_env_intelmpi.sif"
+      template_name: "epoch_intelmpi_env.def.tmpl"
+      docker_image: "ubuntu:20.04"
+      apt_packages: "build-essential gfortran zlib1g-dev libpsm2-2 ibverbs-providers librdmacm1 intel-oneapi-mpi-devel-2021.3.0"
+      mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
     }
     smilei: {
       work_dir: "/home/yuhanjin/Code_Program/Env/Smilei"
@@ -105,6 +113,7 @@ def env-template-values [cfg: record] {
   {
     DOCKER_IMAGE: $cfg.docker_image
     APT_PACKAGES: $cfg.apt_packages
+    MPI_ROOT: ($cfg.mpi_root? | default "")
     AUTHOR: ($cfg.author? | default "")
     DESCRIPTION: ($cfg.description? | default "")
     HDF5_VERSION: ($cfg.hdf5_version? | default "")
