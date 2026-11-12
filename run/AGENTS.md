@@ -16,6 +16,27 @@
   clean, or reinterpret existing simulation results. The timestamp has one-second resolution. Check the target before launch and stop if the result directory already exists.
 - Treat target selection, MPI invocation, bind paths, executables, input
   staging, and result naming as reproducibility behavior.
+- Keep run_pic.sh local to one host; use the Slurm examples for multi-node
+  runs. Set a default container FI_PROVIDER_PATH only when unset or empty,
+  preserving explicit provider paths, fabric selection and thread settings.
+- Bind the Smilei result directory explicitly at the same absolute path
+  and set that path as the container working directory.
+
+## PIC Slurm Examples
+
+- `jobsub/epoch_jobsub.sh` and `jobsub/smilei_jobsub.sh` are standalone POSIX
+  shell examples for copying into a case directory. Keep resource directives
+  as editable placeholders and the three clusters' settings in concise English
+  comments; do not choose a production allocation for the user.
+- Use one host Intel MPI 2021.3.0 launcher with Singularity 3.7.3. Preserve the
+  MPI, UCX and PSM2 bindings and the explicit `I_MPI_OFI_PROVIDER` override.
+- Keep inputs, dimensions, SIFs and external EPOCH tables explicit. Use the
+  standard program images and preserve the Smilei HDF5 library path.
+- Stage inputs in a new timestamp-and-job-ID result directory. Refuse an
+  existing directory, preserve the source input, substitute EPOCH table paths
+  only in the run deck, and propagate the simulation exit status.
+- Take MPI ranks and OpenMP threads from the Slurm allocation. Do not add
+  resource tuning, automatic submission or compute-node probes.
 
 ## Jupyter Runtime Invariants
 
@@ -60,6 +81,8 @@
 ## Validation
 
 - Run `bash -n run_pic.sh`.
+- Run `sh -n jobsub/epoch_jobsub.sh` and `sh -n jobsub/smilei_jobsub.sh`;
+  inspect resource placeholders, cluster mappings and command construction.
 - Run `bash -n run_jupyter.sh` and `bash -n jupyter_job.sh`.
 - Run `bash -n run_matlab_browser.sh`; check help and invalid arguments without
   invoking the app, then use temporary fixtures for paths, exit status, and

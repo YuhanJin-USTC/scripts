@@ -4,13 +4,13 @@ source ../build_common.nu
 
 # Build PIC program images from local source.
 def main [
-  program: string # epoch1d, epoch2d, epoch3d, epoch3d_intelmpi, smilei or smilei_spin
+  program: string # epoch1d, epoch2d, epoch3d, smilei or smilei_spin
   --dry-run       # print config only
 ] {
   # Target configuration.
   let target_configs = {
     epoch1d: {
-      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_Photon_Probe_2026/epoch"
+      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_2025/epoch"
       env_image: "/home/yuhanjin/Code_Program/Env/Epoch/epoch_env.sif"
       work_dir: "/home/yuhanjin/Code_Program/Epoch/Epoch1d"
       image_name: "epoch_epoch1d.sif"
@@ -22,10 +22,11 @@ def main [
       exec_name: "epoch1d"
       epoch_dim: "epoch1d"
       epoch_compiler: "gfortran"
-      clean_items: "epoch2d epoch3d doc .git .github .gitignore License README.md AGENTS.md"
+      mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
+      clean_items: "epoch1d/obj SDF/FORTRAN/obj epoch2d epoch3d doc .git .github .gitignore License README.md AGENTS.md"
     }
     epoch2d: {
-      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_Photon_Probe_2026/epoch"
+      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_2025/epoch"
       env_image: "/home/yuhanjin/Code_Program/Env/Epoch/epoch_env.sif"
       work_dir: "/home/yuhanjin/Code_Program/Epoch/Epoch2d"
       image_name: "epoch_epoch2d.sif"
@@ -37,10 +38,11 @@ def main [
       exec_name: "epoch2d"
       epoch_dim: "epoch2d"
       epoch_compiler: "gfortran"
-      clean_items: "epoch1d epoch3d doc .git .github .gitignore License README.md AGENTS.md"
+      mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
+      clean_items: "epoch2d/obj SDF/FORTRAN/obj epoch1d epoch3d doc .git .github .gitignore License README.md AGENTS.md"
     }
     epoch3d: {
-      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_Photon_Probe_2026/epoch"
+      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_2025/epoch"
       env_image: "/home/yuhanjin/Code_Program/Env/Epoch/epoch_env.sif"
       work_dir: "/home/yuhanjin/Code_Program/Epoch/Epoch3d"
       image_name: "epoch_epoch3d.sif"
@@ -52,26 +54,11 @@ def main [
       exec_name: "epoch3d"
       epoch_dim: "epoch3d"
       epoch_compiler: "gfortran"
-      clean_items: "epoch1d epoch2d doc .git .github .gitignore License README.md AGENTS.md"
-    }
-    epoch3d_intelmpi: {
-      source_dir: "/home/yuhanjin/Source_Code/Epoch/Epoch_Photon_Probe_2026/epoch"
-      env_image: "/home/yuhanjin/Code_Program/Env/Epoch/epoch_env_intelmpi.sif"
-      work_dir: "/home/yuhanjin/Code_Program/Epoch/Epoch3d"
-      image_name: "epoch_epoch3d_photon_probe_work_intelmpi.sif"
-      template_name: "epoch.def.tmpl"
-      build_dir: "/opt/.local/program/epoch_build"
-      tar_name: "epoch_source.tar.gz"
-      tar_target: "/opt/.local/program/source.tar.gz"
-      jobs: 8
-      exec_name: "epoch3d"
-      epoch_dim: "epoch3d"
-      epoch_compiler: "gfortran"
       mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
-      clean_items: "epoch1d epoch2d doc .git .github .gitignore License README.md AGENTS.md"
+      clean_items: "epoch3d/obj SDF/FORTRAN/obj epoch1d epoch2d doc .git .github .gitignore License README.md AGENTS.md"
     }
     smilei: {
-      source_dir: "/home/yuhanjin/Source_Code/Smilei_2025/Smilei"
+      source_dir: "/home/yuhanjin/Source_Code/Smilei/Smilei_2025/Smilei"
       env_image: "/home/yuhanjin/Code_Program/Env/Smilei/smilei_env.sif"
       work_dir: "/home/yuhanjin/Code_Program/Smilei/Smilei_v5_1"
       image_name: "Smilei_v5_1.sif"
@@ -80,12 +67,13 @@ def main [
       tar_name: "generic_source.tar.gz"
       tar_target: "/opt/.local/program/source.tar.gz"
       hdf5_root: "/opt/.local/program/hdf5"
+      mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
       jobs: 8
       exec_name: "smilei"
-      clean_items: "src benchmarks validation doc tools scripts makefile CMakeLists.txt .git .github .gitignore .gitlab-ci.yml License README.md"
+      clean_items: "build benchmarks validation doc .git .github .gitignore .gitlab-ci.yml License README.md"
     }
     smilei_spin: {
-      source_dir: "/home/yuhanjin/Source_Code/Smilei_Spin_2025/Smilei_Spin"
+      source_dir: "/home/yuhanjin/Source_Code/Smilei/Smilei_Spin_2025/Smilei_Spin"
       env_image: "/home/yuhanjin/Code_Program/Env/Smilei_Spin/smilei_spin_env.sif"
       work_dir: "/home/yuhanjin/Code_Program/Smilei_Spin/Smilei_Spin_v2_2_3D_interpolator"
       image_name: "Smilei_Spin_v2_2_3D_interpolator.sif"
@@ -94,9 +82,10 @@ def main [
       tar_name: "generic_source.tar.gz"
       tar_target: "/opt/.local/program/source.tar.gz"
       hdf5_root: "/opt/.local/program/hdf5"
+      mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
       jobs: 8
       exec_name: "smilei"
-      clean_items: "src benchmarks validation doc tools scripts makefile CMakeLists.txt .git .github .gitignore .gitlab-ci.yml License README.md"
+      clean_items: "build benchmarks validation doc .git .github .gitignore .gitlab-ci.yml License README.md"
     }
   }
 
@@ -173,7 +162,7 @@ def main [
   clean-temp-dir $temp_dir
 
   status "OK" $"Build completed. Image file: ($image_path)"
-  field "Run test" $"($engine) exec ($image_path) ($cfg.exec_name)"
+  field "Run test" $"nu '($script_dir | path join 'test_pic_images.nu')' ($program)"
 }
 
 def image-template-values [cfg: record env_image: string] {

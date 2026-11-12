@@ -30,9 +30,19 @@ Use root:scripts/build_containers for shared work or its exact pic or post_proce
 - Keep environment-image builds, program-image builds, and smoke tests as
   separate stages with explicit EPOCH, Smilei, and Smilei-Spin target records.
 - EPOCH builders use only Generic source
-  `/home/yuhanjin/Source_Code/Epoch/Epoch/epoch` and Generic images
+  `/home/yuhanjin/Source_Code/Epoch/Epoch_2025/epoch` and Generic images
   `epoch_epoch1d.sif`, `epoch_epoch2d.sif`, and `epoch_epoch3d.sif`.
   Photon Probe and QED assets remain outside this workflow and untouched.
+- Use Intel MPI 2021.3.0 for all PIC targets, with the existing GNU compiler
+  backends and parallel HDF5 built against the same MPI. Keep the standard
+  target and image names; do not retain separate MPI trial targets.
+- Keep cluster provider selection and host-library bindings in the Slurm
+  examples, not in container image defaults.
+- Set a default FI_PROVIDER_PATH for the bundled Intel MPI provider
+  directory in PIC environment images and smoke-test commands. Preserve
+  explicit provider paths and fabric selection.
+- Run smoke tests with OMP_NUM_THREADS=1. Keep production thread settings
+  outside the smoke-test workflow.
 - Preserve explicit source, environment image, output image, compiler, HDF5,
   job-count, executable, and template configuration.
 - Keep `pic_env_defs/`, `pic_defs/`, and `pic_test_inputs/` separate.

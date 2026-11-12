@@ -11,15 +11,28 @@ From: {{DOCKER_IMAGE}}
     echo "Asia/Shanghai" >/etc/timezone
     rm -f timezone.txt
 
+    apt-get update && apt-get install -y ca-certificates gnupg wget
+    wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+        | gpg --batch --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" >/etc/apt/sources.list.d/oneapi.list
     apt-get update && apt-get install -y {{APT_PACKAGES}}
+
+    # Remove standalone MPI debug symbols.
+    CODEX_TEMP_CLEANUP=1 rm -f \
+        "{{MPI_ROOT}}/lib/release/libmpi.dbg" \
+        "{{MPI_ROOT}}/lib/release_mt/libmpi.dbg" \
+        "{{MPI_ROOT}}/lib/debug/libmpi.dbg" \
+        "{{MPI_ROOT}}/lib/debug_mt/libmpi.dbg"
 
     apt-get clean
     rm -rf /var/lib/apt/lists/*
 
 %environment
 
-    export FI_PROVIDER=verbs
-    export I_MPI_FABRICS=shm:ofi
+    export I_MPI_ROOT="{{MPI_ROOT}}"
+    export PATH="$I_MPI_ROOT/bin:$PATH"
+    export LD_LIBRARY_PATH="$I_MPI_ROOT/lib/release:$I_MPI_ROOT/lib:$I_MPI_ROOT/libfabric/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export FI_PROVIDER_PATH="${FI_PROVIDER_PATH:-$I_MPI_ROOT/libfabric/lib/prov}"
     export LC_ALL=C
 
 %labels

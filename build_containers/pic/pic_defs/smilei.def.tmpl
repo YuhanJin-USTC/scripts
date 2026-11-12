@@ -7,6 +7,9 @@ From: {{ENV_IMAGE}}
 
 %post
 
+    export I_MPI_ROOT="{{MPI_ROOT}}"
+    export SMILEICXX="$I_MPI_ROOT/bin/mpicxx"
+    export LD_LIBRARY_PATH="$I_MPI_ROOT/lib/release:$I_MPI_ROOT/lib:$I_MPI_ROOT/libfabric/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export HDF5_ROOT_DIR={{HDF5_ROOT}}
     export PYTHONEXE=python3
 
@@ -27,8 +30,6 @@ From: {{ENV_IMAGE}}
 
 %environment
 
-    export FI_PROVIDER=verbs
-    export I_MPI_FABRICS=shm:ofi
     export LD_LIBRARY_PATH={{HDF5_ROOT}}/lib:$LD_LIBRARY_PATH
     export PATH={{BUILD_DIR}}:$PATH
 

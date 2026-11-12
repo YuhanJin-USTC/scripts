@@ -2,7 +2,7 @@
 
 source ../build_common.nu
 
-# Run smoke tests for PIC program images.
+# Run single-threaded smoke tests for PIC program images.
 def main [
   program: string = "all" # all, epoch1d, epoch2d, epoch3d, smilei or smilei_spin
   --dry-run              # print commands only
@@ -48,6 +48,7 @@ def main [
 
   let script_dir = ($env.CURRENT_FILE | path dirname | path expand)
   let engine = (select-engine)
+  let mpi_env = 'export FI_PROVIDER_PATH="${FI_PROVIDER_PATH:-$I_MPI_ROOT/libfabric/lib/prov}"'
 
   for target in $targets {
     let cfg = ($test_configs | get $target)
@@ -71,7 +72,7 @@ def main [
     field "Input" $input_dir
     field "Run dir" $run_dir
 
-    let shell_cmd = $"cd /work && ($cfg.command)"
+    let shell_cmd = $"($mpi_env); export OMP_NUM_THREADS=1; cd /work && ($cfg.command)"
     field "Command" $"($engine) exec --bind ($run_dir):/work ($image) sh -lc '($shell_cmd)'"
 
     if $dry_run {

@@ -1,13 +1,13 @@
 # Runtime Launchers
 
-This domain contains local PIC launchers, the WSL controller for scheduled
-JupyterLab sessions on configured clusters, and the local Figure_Browser
-entry point.
+This domain contains local PIC launchers, PIC Slurm submission examples, the
+WSL controller for scheduled JupyterLab sessions on configured clusters, and
+the local Figure_Browser entry point.
 
 ## PIC Runs
 
 `run_pic.sh` is the unified launcher for EPOCH, Smilei, and Smilei-Spin
-Apptainer runs.
+Apptainer runs on one local host. Use the Slurm examples for multi-node runs.
 
 ## Usage
 
@@ -33,6 +33,16 @@ Each invocation requires one input and accepts an optional positive MPI process
 count. It creates an isolated timestamped `Results_*` directory below the
 invocation directory and preserves the exact input used. EPOCH retains the
 original filename plus the container-required `input.deck`.
+An existing result directory causes an error before any input is copied.
+
+The launcher sets `FI_PROVIDER_PATH` to `$I_MPI_ROOT/libfabric/lib/prov`
+inside the container only when unset or empty. This also supports existing
+Intel MPI SIFs whose environment omitted the provider path. Explicit provider
+paths, fabric selection, and production OpenMP settings are preserved.
+
+EPOCH binds the result directory to `/work`. Smilei and Smilei-Spin explicitly
+bind it at the same absolute path and use that path as the container working
+directory. The output location and result naming are unchanged.
 
 The EPOCH targets use only the Generic images `epoch_epoch1d.sif`,
 `epoch_epoch2d.sif`, and `epoch_epoch3d.sif`. Photon Probe and QED sources
@@ -40,6 +50,85 @@ and SIFs remain outside this workflow and untouched.
 
 The launcher is real-only. It has no dry-run mode and must not be used for
 validation.
+
+## PIC Slurm Examples
+
+Copy [epoch_jobsub.sh](jobsub/epoch_jobsub.sh) or
+[smilei_jobsub.sh](jobsub/smilei_jobsub.sh) into the case directory. Fill every
+`<...>` value in the active `#SBATCH` header, then edit the input and SIF paths
+near the top of the script. Enable and fill the commented constraint directive
+when selecting a CPU type in a mixed partition.
+
+```bash
+# Safe help from this repository
+sh run/jobsub/epoch_jobsub.sh --help
+sh run/jobsub/smilei_jobsub.sh --help
+
+# Real submission from the prepared case directory
+sbatch epoch_jobsub.sh
+sbatch smilei_jobsub.sh
+```
+
+The scripts contain no fixed production allocation. Set total ranks to nodes
+times ranks per node, and keep ranks per node times threads within the selected
+node's CPU count. `SLURM_NTASKS` supplies MPI ranks and `SLURM_CPUS_PER_TASK`
+supplies OpenMP threads. The scripts retain `OMP_SCHEDULE=dynamic`,
+`OMP_PROC_BIND=true`, and `I_MPI_PIN_DOMAIN=omp`.
+
+The following settings were checked through read-only SSH queries on
+2026-11-11. All three sites provide `mpi/intelmpi/2021.3.0` and
+`singularity/3.7.3`; the user QoS is `user_yuhanjin`.
+
+| Cluster | Partition | CPUs/node | Constraint | Account | Provider |
+| --- | --- | --- | --- | --- | --- |
+| WZ | `wzacnormal` | 128 | none required | `ac58qn21ek` | `mlx` |
+| WZ | `wzacnormal04` | 64 | none required | `ac58qn21ek` | `mlx` |
+| WZ | `wzhcnormal` | 32 or 64 | `32core` or `64core` | `ac58qn21ek` | `mlx` |
+| HF | `hfacnormal01` | 128 | none required | `ac58qn21ek` | `psm2` |
+| HF | `hfacnormal02` | 128 | none required | `ac58qn21ek` | `psm2` |
+| HF | `hfacnormal04` | 128 | none required | `ac58qn21ek` | `psm2` |
+| TY | `tyhcnormal` | 32 or 64 | `32core` or `64core` | `shiyin` | `mlx` |
+
+The provider defaults extend the original test script's WZ `wzacnormal`, HF
+`hfacnormal04`, and TY `tyhcnormal` settings. The added partitions have not been
+run-tested; available modules and libraries do not prove compute-node fabric
+compatibility or performance. An explicit provider override is retained:
+
+```bash
+sbatch --export=ALL,I_MPI_OFI_PROVIDER=tcp epoch_jobsub.sh
+sbatch --export=ALL,I_MPI_OFI_PROVIDER=tcp smilei_jobsub.sh
+```
+
+There is no automatic TCP fallback. One host `mpiexec` launches the container
+processes. The scripts bind the host Intel MPI directory read-only, add
+`/opt/hpc/software/mpi/hpcx/v2.11.0/ucx_without_rocm` for `mlx`, or bind
+`/lib64/libpsm2.so.2` into the container for `psm2`. Smilei also retains
+`/opt/.local/program/hdf5/lib` in the container library path.
+
+`HOME` is `/work/home/yuhanjin` on WZ/TY and `/public/home/yuhanjin` on HF.
+The scripts bind this directory at the same container path. Submit from the
+case directory under that home; input and result paths use the submission
+working directory. Both scripts create a new
+`Results_<input>_<timestamp>_<jobid>` directory and refuse to reuse an existing
+one. Slurm logs remain `out_%j.log` and `err_%j.log`.
+
+EPOCH defaults to the Generic 3D SIF; `EPOCH_DIM` selects `1d`, `2d`, or `3d`.
+The external table path is
+`$HOME/Source_Code/Epoch/Epoch/epoch/epoch${EPOCH_DIM}/src/physics_packages/TABLES`.
+This cluster path differs from the local `Epoch_2025` build source path.
+The source deck is copied as `<input_name>_backup`; only the generated
+`input.deck` receives the `__TABLE_PATH__` substitution. `USE_DATA_DIRECTORY`
+contains `./`, preserving the test runner's output selection.
+
+Smilei defaults to `input.py` and the standard Smilei SIF. The script includes
+the alternate Smilei-Spin SIF path as a comment. The input is copied unchanged
+into the result directory. Both examples preserve a nonzero simulation exit
+status and retain failed run files for diagnosis.
+
+Rebuild the environment and program images with the updated Intel MPI
+[container workflow](../build_containers/README.md) before using these examples.
+They do not build, upload, or submit anything automatically when read or when
+invoked with `--help`.
 
 ## Cluster JupyterLab
 
@@ -139,6 +228,8 @@ Run:
 
 ```bash
 bash -n run/run_pic.sh
+sh -n run/jobsub/epoch_jobsub.sh
+sh -n run/jobsub/smilei_jobsub.sh
 bash -n run/run_jupyter.sh
 bash -n run/jupyter_job.sh
 bash -n run/run_matlab_browser.sh

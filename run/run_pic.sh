@@ -33,7 +33,7 @@ usage() {
   printf '%s\n' \
     "Usage: $0 <target> <input> [mpi_procs]" \
     "" \
-    "Run a PIC input inside the configured Apptainer image." \
+    "Run a PIC input locally inside the configured Apptainer image." \
     "" \
     "Targets:" \
     "  epoch1d      EPOCH 1D Generic build." \
@@ -81,6 +81,7 @@ fi
 TARGET="$1"
 INPUT_ARG="$2"
 MPI_PROCS="${3:-1}"
+MPI_ENV='export FI_PROVIDER_PATH="${FI_PROVIDER_PATH:-$I_MPI_ROOT/libfabric/lib/prov}"'
 
 case "$TARGET" in
   epoch1d)
@@ -150,7 +151,10 @@ RESULT_DIR="Results_${INPUT_BASE}_${TIMESTAMP}"
 print_header
 
 # Stage the input in an isolated result directory.
-mkdir -p "$RESULT_DIR"
+if ! mkdir "$RESULT_DIR"; then
+  status ERROR "Cannot create new result directory: $RESULT_DIR."
+  exit 1
+fi
 cp "$INPUT_PATH" "$RESULT_DIR/$INPUT_NAME"
 
 if [[ "$FAMILY" == "epoch" && "$INPUT_NAME" != "input.deck" ]]; then
@@ -158,25 +162,27 @@ if [[ "$FAMILY" == "epoch" && "$INPUT_NAME" != "input.deck" ]]; then
 fi
 
 cd "$RESULT_DIR"
+RUN_PATH=$(pwd)
 
 if [[ "$FAMILY" == "epoch" ]]; then
-  RUN_PATH=$(pwd)
   if [[ "$MPI_PROCS" -gt 1 ]]; then
     step "Running $EXECUTABLE with MPI."
     apptainer exec --bind "$RUN_PATH:/work" "$SIF_PATH" \
-      sh -lc "cd /work && printf '.\n' | mpirun -np $MPI_PROCS $EXECUTABLE"
+      sh -lc "$MPI_ENV; cd /work && printf '.\n' | mpirun -np $MPI_PROCS $EXECUTABLE"
   else
     step "Running $EXECUTABLE."
     apptainer exec --bind "$RUN_PATH:/work" "$SIF_PATH" \
-      sh -lc "cd /work && printf '.\n' | $EXECUTABLE"
+      sh -lc "$MPI_ENV; cd /work && printf '.\n' | $EXECUTABLE"
   fi
 else
   if [[ "$MPI_PROCS" -gt 1 ]]; then
     step "Running $EXECUTABLE with MPI."
-    apptainer exec "$SIF_PATH" mpirun -np "$MPI_PROCS" "$EXECUTABLE" "$INPUT_NAME"
+    apptainer exec --bind "$RUN_PATH:$RUN_PATH" --pwd "$RUN_PATH" "$SIF_PATH" \
+      sh -c "$MPI_ENV; exec \"\$@\"" sh mpirun -np "$MPI_PROCS" "$EXECUTABLE" "$INPUT_NAME"
   else
     step "Running $EXECUTABLE."
-    apptainer exec "$SIF_PATH" "$EXECUTABLE" "$INPUT_NAME"
+    apptainer exec --bind "$RUN_PATH:$RUN_PATH" --pwd "$RUN_PATH" "$SIF_PATH" \
+      sh -c "$MPI_ENV; exec \"\$@\"" sh "$EXECUTABLE" "$INPUT_NAME"
   fi
 fi
 

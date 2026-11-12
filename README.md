@@ -37,6 +37,7 @@ tools required by the workflow being used.
 | Core scripts | Bash, Nushell, standard Linux utilities |
 | Container builds | Apptainer or Singularity, `sudo`, configured source and image paths |
 | PIC runs | Apptainer and the configured SIF images |
+| PIC Slurm examples | Slurm, Intel MPI 2021.3.0, Singularity 3.7.3, and rebuilt PIC SIF images |
 | Cluster Jupyter sessions | Bash, OpenSSH, Python 3, curl, `cmd.exe`, Slurm, Singularity 3.7.3, and the configured Jupyter SIF |
 | MATLAB Figure Browser | Bash, Node 26, the existing app build, and WSL browser integration |
 | NAS and cluster transfer | `rsync`, OpenSSH, configured mounts and SSH aliases |
@@ -63,6 +64,7 @@ any command.
 | `clean/clean_files.nu` | Preview | Add `--run`, then type `DELETE` |
 | Container image builders | **Real build** | Add `--dry-run` to preview |
 | PIC image smoke tests | **Real test** | Add `--dry-run` to preview |
+| PIC Slurm examples | **Real job** | Fill the header placeholders and paths, then submit with `sbatch` |
 | Cluster Jupyter lifecycle | **Real** | Use explicit `start`, `connect`, `status`, or `stop` |
 | MATLAB Figure Browser | **Real, foreground** | Start or reuse the app; `--no-open` suppresses browser launch |
 | Arch backup and restore | **Real** | `--preview` inspects the documented subset; restore defaults to the current set |
@@ -106,6 +108,7 @@ Important boundaries:
 ├── clean/                      # Protected junk cleanup
 ├── process/                    # ASR, translation, and subtitle burn-in
 ├── run/                        # PIC, cluster Jupyter, and local app runtimes
+│   └── jobsub/                 # EPOCH and Smilei Slurm submission examples
 ├── sync/                       # NAS and cluster transfer workflows
 ├── transfer/                   # Cluster SSH-key deployment
 └── update/                     # Arch, iWAN, and Git update workflows
@@ -202,6 +205,8 @@ bash backup/archlinux/backup.sh --help
 bash backup/archlinux/restore.sh --help
 nu process/asr_mt.nu --help
 bash run/run_pic.sh --help
+sh run/jobsub/epoch_jobsub.sh --help
+sh run/jobsub/smilei_jobsub.sh --help
 bash run/run_jupyter.sh --help
 bash run/run_matlab_browser.sh --help
 
@@ -246,10 +251,16 @@ running it. Do not execute it as validation or expose key material in logs.
 ## EPOCH Source and Image Scope
 
 The EPOCH builders and runners in this repository target only the Generic
-source at `/home/yuhanjin/Source_Code/Epoch/Epoch/epoch` and the Generic images
+source at `/home/yuhanjin/Source_Code/Epoch/Epoch_2025/epoch` and the Generic images
 `epoch_epoch1d.sif`, `epoch_epoch2d.sif`, and `epoch_epoch3d.sif`. Existing
 Photon Probe or QED sources and SIF images are outside this reorganization and
 remain untouched.
+
+All standard EPOCH, Smilei, and Smilei-Spin build targets now use Intel MPI
+2021.3.0 with their existing GNU compiler backends. Rebuild environment images
+before program images; existing SIFs are not changed by this source update.
+See [container builds](build_containers/README.md) and the
+[PIC Slurm examples](run/README.md#pic-slurm-examples) for cluster submission.
 
 The open provenance proposal at
 `/home/yuhanjin/Research_Workflow/policy/open-proposals/epoch-sif-provenance.json`

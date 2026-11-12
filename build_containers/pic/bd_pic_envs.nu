@@ -4,7 +4,7 @@ source ../build_common.nu
 
 # Build PIC environment images.
 def main [
-  program: string # epoch, epoch_intelmpi, smilei or smilei_spin
+  program: string # epoch, smilei or smilei_spin
   --dry-run       # print config only
 ] {
   # Target configuration.
@@ -14,14 +14,7 @@ def main [
       image_name: "epoch_env.sif"
       template_name: "epoch_env.def.tmpl"
       docker_image: "ubuntu:20.04"
-      apt_packages: "build-essential gfortran make mpich libmpich-dev wget openssh-client zlib1g-dev"
-    }
-    epoch_intelmpi: {
-      work_dir: "/home/yuhanjin/Code_Program/Env/Epoch"
-      image_name: "epoch_env_intelmpi.sif"
-      template_name: "epoch_intelmpi_env.def.tmpl"
-      docker_image: "ubuntu:20.04"
-      apt_packages: "build-essential gfortran zlib1g-dev libpsm2-2 ibverbs-providers librdmacm1 intel-oneapi-mpi-devel-2021.3.0"
+      apt_packages: "build-essential gfortran make wget openssh-client zlib1g-dev libpsm2-2 ibverbs-providers librdmacm1 intel-oneapi-mpi-devel-2021.3.0"
       mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
     }
     smilei: {
@@ -29,7 +22,8 @@ def main [
       image_name: "smilei_env.sif"
       template_name: "smilei_env.def.tmpl"
       docker_image: "ubuntu:20.04"
-      apt_packages: "build-essential git make cmake gcc mpich libmpich-dev wget openssh-client zlib1g-dev python3 python3-pip"
+      apt_packages: "build-essential git make cmake gcc gfortran wget openssh-client zlib1g-dev python3 python3-pip libpsm2-2 ibverbs-providers librdmacm1 intel-oneapi-mpi-devel-2021.3.0"
+      mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
       hdf5_version: "1.14.5"
       hdf5_prefix: "/opt/.local/program/hdf5"
       hdf5_source_dir: "/opt/.local/program/source_code"
@@ -41,7 +35,8 @@ def main [
       image_name: "smilei_spin_env.sif"
       template_name: "smilei_env.def.tmpl"
       docker_image: "ubuntu:20.04"
-      apt_packages: "build-essential git make cmake gcc mpich libmpich-dev wget openssh-client zlib1g-dev python3 python3-pip"
+      apt_packages: "build-essential git make cmake gcc gfortran wget openssh-client zlib1g-dev python3 python3-pip libpsm2-2 ibverbs-providers librdmacm1 intel-oneapi-mpi-devel-2021.3.0"
+      mpi_root: "/opt/intel/oneapi/mpi/2021.3.0"
       hdf5_version: "1.14.5"
       hdf5_prefix: "/opt/.local/program/hdf5"
       hdf5_source_dir: "/opt/.local/program/source_code"
