@@ -78,12 +78,12 @@ nu sync/cluster2windows.nu \
 ```
 
 The source directory is removed once: `results/bz001.sdf` becomes
-`<local_directory>/bz001.sdf`; selected nested paths remain nested. The
-existing rsync options are unchanged: archive, compression, `--partial`,
-`--size-only`, and no owner/group/permission/time preservation on the local
-side. Equal-size existing files can be skipped even if their contents differ;
-different-size files can replace existing local files. This command does not use the
-fast command's incoming-file rename policy. It does not delete unrelated files.
+`<local_directory>/bz001.sdf`; selected nested paths remain nested. Both
+download commands overwrite every selected regular file at the same relative
+path on each run, even when size and modification time match. Local files
+outside the selection are left in place. Rsync uses `--ignore-times` in both
+preview and run modes and retains archive mode, compression, `--partial`,
+and the existing owner, group, permission and timestamp options.
 
 ### Source Paths
 
@@ -253,6 +253,8 @@ history, configuration, logs or chat. Remove it from that shell when finished
 a token and an interactive terminal, the probe refuses instead of reading a
 pipe or clipboard. Offline preview and `--ssh-list` never request it. Run reads
 SSH metadata first and skips an empty file selection without requesting a token.
+For every nonempty selection, the local rename and replacement check must pass
+before token input and payload download, including when all files already exist.
 
 The native client requires the token in its `-w` process argument, so local
 process inspection may see it during the operation. The wrapper does not save
@@ -267,7 +269,9 @@ Offline plans require Nushell, Python 3.11+ and the sibling
 managed Rayfile 6.7.8.12 executable at
 `~/.local/share/rayfile-runtime/rayfile-c`, with the pinned SHA-256
 `f718db7def476df9cdb259e0424b54bb0d0f82ed864adb84c62730b73d01b0a7`.
-No installation is attempted by the download command.
+Downloads use ordinary same-filesystem rename and replacement through Python's
+standard library. No hard-link or `renameat2(RENAME_NOREPLACE)` support is
+required. No installation is attempted by the download command.
 
 | Target | Short name | Address | Proxy port (`-P`) | User |
 | --- | --- | --- | --- | --- |
@@ -288,8 +292,9 @@ message appears every 30 seconds.
 ### Current Limits and Failures
 
 **Real download is enabled for HF, TY and WZ through the same workflow.**
-WZ has passed the tiny real-server fixture below. HF and TY share its parent
-batching, staging, completeness, SSH stability and no-overwrite publication
+WZ has passed the historical tiny real-server fixture below, which predates
+the current overwrite policy. HF and TY share its parent
+batching, staging, completeness, SSH stability and local publication
 logic, but have not been tested against their servers. Their run prints this
 status and proceeds with all runtime checks; it does not ask for an additional
 confirmation. Enabling HF/TY does not establish server-side acceptance.
@@ -300,7 +305,12 @@ an empty, exclusive stage, then restores relative paths. It never batches two
 different parents into the same native destination. The source directory is
 removed once and inner paths, including duplicate basenames, are retained.
 
-Every batch must have exactly the selected regular files and byte sizes, with
+Every selected regular file enters its parent directory's download batch,
+including files already present locally with the same size and modification
+time. A local directory, symbolic link or special object at a selected file path is an error;
+destination ancestors must remain ordinary directories without symbolic links.
+
+Every batch must have exactly the requested regular files and byte sizes, with
 no links or extra objects. One SSH session scans the source directory before
 and after the Rayfile transfer on the same login node. The complete inventories
 must match in path, type, size, modification time, inode and device. A lost
@@ -309,19 +319,34 @@ before publication. Production verification uses metadata and local sizes;
 it does not compute remote payload hashes or establish a filesystem snapshot.
 
 Staging uses a hidden `.rayfile-stage-<id>` directory in the destination or
-its nearest existing ancestor, on the destination filesystem. Publication
-creates complete files with hard links that cannot replace an existing entry.
-An incoming collision becomes `name.1.ext`, then `name.2.ext`, and so on;
-existing files stay unchanged. This final naming is handled by the helper,
-independently of native rename. A filesystem without hard-link support fails
-explicitly; there is no overwrite fallback. Windows-mounted filesystem support
-and large-file throughput have not been tested.
+its nearest existing ancestor, on the destination filesystem. Before token input
+or payload download, tiny files inside the owned stage verify an ordinary rename
+to an unused name and replacement of an existing file. Unsupported operations
+or permissions stop the run at this check. The check runs only when payloads
+are needed and never replaces user files.
+
+Batch reconstruction uses ordinary rename within the private stage. An existing
+entry is an error, so different source paths cannot silently merge.
+
+Immediately before each `os.replace()`, the helper checks that the destination
+entry is missing or a regular file. It publishes every verified file at its
+original relative path, including when an existing local file has the same size.
+There is no automatic numbering, backup or rollback, and unrelated files are
+not deleted. Replacement moves a complete staged file without first deleting
+the old entry or writing directly into its final name. Cross-filesystem,
+permission and other replacement errors stop publication without a copy fallback.
+G: exFAT/DrvFs, large-file throughput and real downloads with this policy have
+not been tested; runtime capability checks do not establish transfer acceptance.
 
 Native/verification failures publish no files. If local publication itself
 fails or is interrupted, already published complete files remain and the error
-reports their count; publication is atomic per file, not across the whole batch.
+reports their count; completed replacements are not rolled back. Publication
+is atomic per file, not across the whole batch.
 Task-created stages are cleaned. A small `.rayfile-stage-<id>.failure.json`
 beside the stage records the phase, counts and a bounded publication preview.
+`published_count` counts completed new files and replacements. The diagnostic
+retains `skipped_count` with value `0`. Failures before a stage exists are
+reported on stderr without a diagnostic file.
 On a source mismatch it also records the login nodes and the first differing
 path with the changed stat values. Tokens and raw native output are excluded.
 
@@ -335,6 +360,8 @@ one valid file and exited `21`, and was rejected as incomplete. `Failed: 0`
 can appear in native summaries and is not itself an error. The original three
 SIF files were inspected only through metadata; none was downloaded. Both
 remote and local fixture payloads were removed.
+This fixture exercised the former numbered-name policy. It does not establish
+real-server acceptance of the current overwrite policy.
 
 The observed `wz` list has timestamps, human-readable sizes and paths but
 no explicit entry type or link field. A filename extension or size is not
@@ -349,7 +376,7 @@ Rayfile, with no rsync fallback.
 | --- | --- |
 | Offline plan exits `0` | Local arguments passed; remote existence and permissions remain unknown |
 | Probe exits `3` | Native response obtained without a recognized fatal error; raw metadata alone is insufficient for typed selection |
-| Run exits `0` | Selected files verified and published, or an empty selection explicitly skipped |
+| Run exits `0` | All selected regular files verified and published, or empty selection explicitly skipped |
 | Operation exits `1` | Guard, dependency, metadata limit, native error, incomplete download or publication failure; read the diagnostic |
 | Operation exits `130` | Interrupted; any completed local publication remains and is counted in the failure diagnostic |
 | Conflicting modes / unsupported download exclude | Refused before token input or network access |

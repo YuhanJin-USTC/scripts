@@ -412,6 +412,54 @@ def create_download_stage(destination):
         os.close(fd)
 
 
+def rename_file(source, destination):
+    source = Path(source)
+    destination = Path(destination)
+    source_fd = open_directory(source.parent)
+    try:
+        fd = open_directory(destination.parent)
+        try:
+            # Only private stage paths use this collision check.
+            try:
+                os.stat(destination.name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise ValueError(f'Unexpected existing entry in download stage: {destination}')
+            os.rename(source.name, destination.name, src_dir_fd=source_fd, dst_dir_fd=fd)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(source_fd)
+
+
+def check_publication(stage):
+    probe = stage / 'rename_check'
+    probe.mkdir(mode=0o700)
+    try:
+        source = probe / 'source'
+        target = probe / 'target'
+        moved = probe / 'moved'
+        for path, content in ((source, b'source'), (target, b'target')):
+            with path.open('xb') as stream:
+                stream.write(content)
+        rename_file(source, moved)
+        if source.exists() or moved.read_bytes() != b'source' or target.read_bytes() != b'target':
+            raise ValueError('Destination did not move the complete file during the rename check.')
+        fd = open_directory(probe)
+        try:
+            os.replace(moved.name, target.name, src_dir_fd=fd, dst_dir_fd=fd)
+        finally:
+            os.close(fd)
+        if moved.exists() or target.read_bytes() != b'source':
+            raise ValueError('Destination did not replace the complete file during the publication check.')
+    except OSError as error:
+        raise ValueError(f'This destination cannot rename or replace complete files (errno {error.errno}); no download was started.') from None
+    finally:
+        os.environ['CODEX_TEMP_CLEANUP'] = '1'
+        shutil.rmtree(probe)
+
+
 def verify_download(stage, chosen):
     expected = {item['path']: item for item in chosen if item['type'] == 'file'}
     directories = {'.'}
@@ -440,7 +488,27 @@ def verify_download(stage, chosen):
     return [(Path(stage) / name, expected[name], observed[name]) for name in sorted(expected)]
 
 
-def publish_download(verified, destination, collision_name):
+def check_destination_entry(name, directory_fd):
+    try:
+        item = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(item.st_mode):
+        raise ValueError(f'Local destination entry is not a regular file: {name}')
+
+
+def check_destination_file(destination, relative):
+    try:
+        fd = open_directory(Path(destination) / relative.parent)
+    except FileNotFoundError:
+        return
+    try:
+        check_destination_entry(relative.name, fd)
+    finally:
+        os.close(fd)
+
+
+def publish_download(verified, destination):
     published = []
     try:
         for source, item, checked in verified:
@@ -451,28 +519,20 @@ def publish_download(verified, destination, collision_name):
             directory = Path(destination) / relative.parent
             fd = open_directory(directory, create=True)
             try:
-                for index in range(10001):
-                    name = relative.name if index == 0 else collision_name(relative.name, index)
-                    if len(safe_relative(name).parts) != 1:
-                        raise ValueError('Invalid collision filename.')
-                    try:
-                        # Hard links publish complete files without replacing any entry.
-                        os.link(source, name, dst_dir_fd=fd, follow_symlinks=False)
-                    except FileExistsError:
-                        continue
-                    except OSError as error:
-                        raise ValueError(f'This destination cannot publish with a hard link (errno {error.errno}); no overwrite fallback was used.') from None
-                    published.append(str(relative.parent / name))
-                    break
-                else:
-                    raise ValueError('Too many existing collision names.')
+                check_destination_entry(relative.name, fd)
+                source_fd = open_directory(source.parent)
+                try:
+                    os.replace(source.name, relative.name, src_dir_fd=source_fd, dst_dir_fd=fd)
+                finally:
+                    os.close(source_fd)
+                published.append(str(relative))
             finally:
                 os.close(fd)
     except (OSError, ValueError, KeyboardInterrupt) as error:
         if isinstance(error, KeyboardInterrupt):
             error.published = published
             raise
-        failure = ValueError(f'Publication stopped after {len(published)} files; existing files were preserved: {error}')
+        failure = ValueError(f'Publication stopped after {len(published)} files. Completed replacements were not rolled back: {error}')
         failure.published = published
         raise failure from None
     return published
@@ -523,11 +583,6 @@ def read_transfer(command, env):
     return code, counts, failed
 
 
-def collision_name(name, index):
-    path = Path(name)
-    return path.stem + '.' + str(index) + path.suffix
-
-
 def first_source_change(before, after):
     old = {item['path']: item for item in before}
     new = {item['path']: item for item in after}
@@ -543,6 +598,16 @@ def first_source_change(before, after):
     return {'order': 'changed'}
 
 
+def verify_source(session, root, node, entries, report):
+    final_node, final_entries = ssh_inventory(session, root, final=True)
+    report['ssh_nodes'].append(final_node)
+    if final_entries != entries:
+        report['source_change'] = first_source_change(entries, final_entries)
+        raise ValueError('SSH source metadata changed between inventories; final destination was not changed.')
+    if final_node != node:
+        raise ValueError('SSH inventory node changed; final destination was not changed.')
+
+
 def run_download(args, session, root):
     if args.target in ('hfcluster', 'tycluster'):
         print(f'[WARN] {args.target} uses the shared download workflow; real-server transfer has not been tested.', file=sys.stderr)
@@ -552,18 +617,24 @@ def run_download(args, session, root):
     if not files:
         print('[SKIP] No regular files selected; destination was not changed.')
         return 0
+    for item in files:
+        check_destination_file(args.destination, safe_relative(item['path']))
+    report = {'schema': 1, 'target': args.target, 'source': args.source,
+              'selected_files': len(files), 'completed_batches': 0,
+              'skipped_count': 0, 'ssh_nodes': [node]}
     client, home = checked_client()
-    token = read_token()
-    if not token.strip() or CONTROL.search(token):
-        raise ValueError('A non-empty single-line token is required.')
-    env = os.environ.copy()
-    env.pop('RAYFILE_TOKEN', None)
     stage = create_download_stage(args.destination)
     stage_identity = stage.stat()
-    report = {'schema': 1, 'target': args.target, 'source': args.source,
-              'selected_files': len(files), 'completed_batches': 0, 'ssh_nodes': [node]}
-    phase = 'prepare batches'
+    phase = 'check local publication'
     try:
+        check_publication(stage)
+        phase = 'read token'
+        token = read_token()
+        if not token.strip() or CONTROL.search(token):
+            raise ValueError('A non-empty single-line token is required.')
+        env = os.environ.copy()
+        env.pop('RAYFILE_TOKEN', None)
+        phase = 'prepare batches'
         groups = {}
         for item in files:
             groups.setdefault(str(PurePosixPath(item['path']).parent), []).append(item)
@@ -583,22 +654,18 @@ def run_download(args, session, root):
                 raise ValueError(f'Native batch failed (exit {code}); final destination was not changed.')
             flattened = [dict(item, path=PurePosixPath(item['path']).name) for item in batch]
             verify_download(batch_stage, flattened)
+            phase = f'assemble batch {index}/{len(groups)}'
             for item in batch:
                 target = payload / item['path']
                 target.parent.mkdir(parents=True, exist_ok=True)
-                os.link(batch_stage / target.name, target, follow_symlinks=False)
+                rename_file(batch_stage / target.name, target)
             report['completed_batches'] = index
         phase = 'verify source stability'
-        final_node, final_entries = ssh_inventory(session, root, final=True)
-        report['ssh_nodes'].append(final_node)
-        if final_entries != entries:
-            report['source_change'] = first_source_change(entries, final_entries)
-            raise ValueError('SSH source metadata changed during transfer; see the diagnostic. Final destination was not changed.')
-        if final_node != node:
-            raise ValueError('SSH inventory node changed; final destination was not changed.')
-        verified = verify_download(payload, chosen)
+        verify_source(session, root, node, entries, report)
+        phase = 'verify download payload'
+        verified = verify_download(payload, files)
         phase = 'publish complete files'
-        published = publish_download(verified, args.destination, collision_name)
+        published = publish_download(verified, args.destination)
     except BaseException as error:
         report.update({'phase': phase, 'error_type': type(error).__name__,
                        'published_count': len(getattr(error, 'published', [])),
@@ -616,12 +683,12 @@ def run_download(args, session, root):
             raise ValueError(f'Stage identity changed; automatic cleanup refused: {stage}')
         os.environ['CODEX_TEMP_CLEANUP'] = '1'
         shutil.rmtree(stage)
-    print(f'[OK] Downloaded {len(published)} files; existing files preserved with numbered incoming names.')
+    print(f'[OK] Published {len(published)} files.')
     return 0
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Inspect metadata or download hf/ty/wz selections through Rayfile; only WZ has live fixture acceptance.")
+    parser = argparse.ArgumentParser(description="Inspect metadata or download hf/ty/wz selections through Rayfile. Downloads overwrite selected regular files at their original paths regardless of size or modification time. Only WZ has live fixture acceptance.")
     parser.add_argument("mode", choices=("validate", "list", "attributes", "ssh-list", "run"))
     parser.add_argument("--target", choices=HOSTS, required=True)
     parser.add_argument("--source", required=True)

@@ -98,7 +98,7 @@ def main [
   --list # Explicit read-only native list probe; no downloads
   --attributes # Explicit read-only native attributes probe for src; no downloads
   --ssh-list # Explicit recursive SSH metadata selection; no token or downloads
-  --run # HF/TY/WZ: SSH metadata, Rayfile payload and verified publication; HF/TY not live-tested
+  --run # Overwrite all selected regular files at their original paths (HF/TY not live-tested)
 ] {
   if ([$dry_run $list $attributes $ssh_list $run] | where {|value| $value } | length) > 1 {
     status "ERROR" "Choose only one mode: --dry-run, --list, --attributes, --ssh-list or --run."
@@ -132,7 +132,7 @@ def main [
   print $"Rule: (if $p == '' and $s == '' { 'all files' } else { $p + '*' + $s })"
   print $"Input: ($src)"
   print $"Path: (if $portal_path { 'explicit portal namespace' } else if (($clean_src | str starts-with $"($cluster.ssh_root)/") or $clean_src == $cluster.ssh_root) { 'registered SSH home mapped to portal root' } else if ($clean_src | str starts-with '/') { 'absolute portal path' } else { 'relative to portal home' })"
-  print "Planned layout: preserve existing files; incoming name.1.ext on collision; inner paths retained"
+  print "Planned layout: preserve relative paths and overwrite matching regular files regardless of size or modification time."
   if $mode == "dry-run" {
     status "DRY-RUN" "Offline plan only; no token, client, server access or destination creation."
     print "Metadata: --ssh-list explicitly reads the mapped SSH source; --list and --attributes show raw native diagnostics."
@@ -144,6 +144,7 @@ def main [
   }
   if $mode == "run" {
     print "Transfer: one SSH session checks the source before and after the Rayfile download."
+    status "WARN" "Every selected existing regular file will be overwritten without backup or rollback."
   }
   ^python3 -B $helper $mode ...$args
   let code = $env.LAST_EXIT_CODE

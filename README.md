@@ -187,8 +187,12 @@ Fast preview stays offline. `--list` and `--attributes` are separately authorize
 read-only probes of the exact source, not filtered download plans. Complete
 SSH inventories and a tiny WZ transfer fixture have passed acceptance. All three
 clusters use Rayfile batches by parent directory and verify source metadata
-before and after the transfer on one SSH session. Incoming collisions receive
-numbered names.
+before and after the transfer on one SSH session. Both `clst2win` and
+`fclst2win` overwrite every selected regular file at its original relative path
+on each run, even when size and modification time match. There is no
+automatic numbering, backup or rollback, and unrelated files are not deleted.
+The historical WZ fixture predates this overwrite policy. G: exFAT/DrvFs and
+real downloads with the current publication policy remain untested.
 HF/TY share this workflow but remain untested against their servers; `--run`
 prints that status and proceeds with the same checks. Upload keeps its existing
 behavior.

@@ -54,6 +54,7 @@ def print-header [
   print $"Target: ($remote_src) -> ($dest)"
   print $"Mode: (if $dry_run { 'dry-run' } else { 'run' })"
   print $"Rule: (filter-rule $prefix $suffix)"
+  print "Overwrite: --run replaces every selected regular file at the same relative path, regardless of size or modification time."
   if $dry_run {
     status "DRY-RUN" "No files will be downloaded."
   }
@@ -67,7 +68,7 @@ def main [
   prefix?: string # File prefix pattern (e.g., "bz")
   suffix?: string # File suffix pattern (e.g., ".sdf")
   --dry-run (-n) # Preview changes without downloading, default
-  --run # download for real
+  --run # Download all selected files, overwriting existing regular files at the same paths
 ] {
   if $run and $dry_run {
     status "ERROR" "Choose only one mode: --dry-run or --run."
@@ -118,7 +119,7 @@ def main [
   # Base rsync flags: archive, compress, skip owner/group for WSL/NTFS.
   mut args = [
     "-amz", "-v",
-    "--no-o", "--no-g", "--no-perms", "--no-times", "--size-only",
+    "--no-o", "--no-g", "--no-perms", "--no-times", "--ignore-times",
     "--partial",
     "--timeout=600",
     "-e", "ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=10"

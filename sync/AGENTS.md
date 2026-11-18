@@ -48,11 +48,18 @@
   empty stages, reconstruct inner paths, and verify exact files/types/sizes
   plus unchanged SSH stat metadata before publishing. No per-file probing,
   rsync payload fallback or implicit all-files transfer.
-- Stage on the destination filesystem. Publish with no-overwrite hard links;
-  number incoming collisions as `name.1.ext`. Preserve existing content and
-  fail clearly if hard links are unsupported. Report partial local publication
-  and retain bounded credential-free failure diagnostics while cleaning owned
-  stage payloads. Native failures must publish nothing.
+- Both download commands overwrite selected regular files at their original
+  relative paths regardless of size or mtime. Fast download never numbers incoming
+  names or deletes unrelated entries. Refuse directory, link and special-object
+  conflicts; preserve destination ancestor guards.
+- Stage on the destination filesystem. Use ordinary rename for private batch
+  assembly and os.replace for final publication. For nonempty payload selections,
+  check replacement inside the owned stage before token input and transfer.
+  Never remove an old destination before replacement or copy into its final name.
+  Recheck destination entry types before each replacement. Report counts and
+  partial publication; completed replacements are not rolled back.
+  Retain bounded credential-free failure diagnostics and clean owned stage
+  payloads. Native failures must publish nothing.
 - Keep the 45-second/1-MiB bounds for metadata only. Production transfer has
   no total time limit, retains bounded logs in memory, and terminates its child
   process group on interruption. Do not treat `Failed: 0` as failure or claim
@@ -62,7 +69,7 @@
   classes; reject links, unknown types, duplicates and absent parent records.
 - Reject the resolved portal root, dot segments and unsafe local destinations.
   Preserve quoted path whitespace and Unicode spelling. Remove the source root
-  only once and preserve internal paths; retain the reviewed rename contract.
+  only once and preserve internal paths.
   Unsupported download exclusions must refuse, never silently widen selection.
 - Upload keeps native rename semantics, existing exclusions and `--all-files`.
   Merge wildcard patterns into one semicolon-separated `-exd`; repeated `-exd`
